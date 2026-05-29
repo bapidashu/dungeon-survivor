@@ -76,6 +76,7 @@
     flex:0 0 auto;
   }
   #hudStats { min-width:310px; }
+  #hudDebuffs { min-width:250px; }
   #hudUpgrades { min-width:270px; }
   #hudKills { min-width:330px; }
   .hudPanel b { color:#dfefff; font-weight:700; }
@@ -87,16 +88,23 @@
     padding:1px 5px; border-radius:5px; background:rgba(255,255,255,.06);
     color:#d6d6ec !important; white-space:nowrap;
   }
+  .hudChip.debuff {
+    background:rgba(180,119,255,.18);
+    border:1px solid rgba(255,138,150,.28);
+    color:#f0d8ff !important;
+  }
+  .hudEmpty { color:#747493 !important; }
   .hudPanel .hudTitle { color:#7ad3ff; font-weight:700; margin-bottom:2px; }
   @media (max-width: 620px) {
     #hud { padding: 8px 10px; gap:5px; }
     #topRow { gap:8px; font-size:12px; flex-wrap:wrap; }
-    #heroHud { width:calc(100% - 58px); }
+    #heroHud { width:calc(100% - 122px); }
     #heroIcon { width:32px; height:32px; border-radius:8px; }
     #hpText { min-width:46px; font-size:11px; }
     #hudDetails { width:100%; gap:4px; font-size:10px; }
     .hudLine { white-space:nowrap; }
     #hudStats { min-width:270px; }
+    #hudDebuffs { min-width:230px; }
     #hudUpgrades { min-width:245px; }
     #hudKills { min-width:285px; }
     .hudPanel { padding:5px 6px; }
@@ -184,6 +192,7 @@
     </div>
     <div id="hudDetails">
       <div class="hudPanel" id="hudStats"><span class="hudTitle">属性</span><span>速度 3.0 · 伤害 100%</span></div>
+      <div class="hudPanel" id="hudDebuffs"><span class="hudTitle">异常状态</span><span class="hudEmpty">当前无负面状态</span></div>
       <div class="hudPanel" id="hudUpgrades"><span class="hudTitle">奖励</span><span>暂无升级奖励</span></div>
       <div class="hudPanel" id="hudKills"><span class="hudTitle">击杀统计</span><span>等级 暂无</span><span>稀有度 暂无</span></div>
     </div>
@@ -241,7 +250,7 @@ window.addEventListener('resize', resize); resize();
 // ---------- audio / SFX ----------
 const SFX = (() => {
   let actx=null, master=null, enabled=true;
-  let lastHit=0, lastCrit=0, lastPick=0, lastKill=0;
+  let lastHit=0, lastCrit=0, lastPick=0, lastKill=0, lastBolt=0;
   function ensure(){
     if(actx) return actx;
     try {
@@ -300,9 +309,19 @@ const SFX = (() => {
   return {
     resume, setEnabled, isEnabled,
     hit(){ const now=performance.now(); if(now-lastHit<55) return; lastHit=now;
-      sweep(520,260,0.08,'square',0.10); noise(0.05,0.08,1800); },
+      const a=ensure(); if(!a) return; const t=a.currentTime;
+      tone(1040,0.045,'triangle',0.075,0.002,t);
+      tone(1560,0.05,'sine',0.045,0.001,t+0.018);
+      noise(0.028,0.035,4200); },
+    bolt(){ const now=performance.now(); if(now-lastBolt<38) return; lastBolt=now;
+      const a=ensure(); if(!a) return; const t=a.currentTime;
+      sweep(760,1320,0.055,'triangle',0.055,t);
+      tone(1760,0.045,'sine',0.035,0.001,t+0.025); },
     crit(){ const now=performance.now(); if(now-lastCrit<70) return; lastCrit=now;
-      sweep(1100,420,0.16,'sawtooth',0.16); noise(0.09,0.12,2600); tone(1600,0.10,'triangle',0.10,0.002); },
+      const a=ensure(); if(!a) return; const t=a.currentTime;
+      tone(1320,0.08,'triangle',0.13,0.002,t);
+      tone(1980,0.10,'sine',0.09,0.002,t+0.035);
+      noise(0.045,0.07,5200); },
     kill(){ const now=performance.now(); if(now-lastKill<40) return; lastKill=now;
       sweep(300,90,0.18,'sawtooth',0.14); noise(0.12,0.10,600); },
     pickupXp(){ const now=performance.now(); if(now-lastPick<30) return; lastPick=now;
@@ -488,6 +507,10 @@ function drawDungeonFloor(g){
 }
 
 // ---------- balance ----------
+const ENEMY_TUNING={spawnIntervalMul:1.15, statMul:0.85};
+const DEBUFF_CHANCE_MUL={temp:0.65, perm:0.50};
+const INITIAL_PLAYER_STATS={speed:3.0,maxhp:120};
+const INITIAL_STATS={pickup:60,regen:0,dmgMul:1,armor:0,crit:0.05,xpMul:1,luck:0};
 const ENEMY_LEVEL_RULES=[
   {lvl:1,  spawnInterval:62, burst:1, hpMul:1.50, speedMul:1.30, dmgMul:1.38, xpMul:1.00, runnerChance:0.05, bruteChance:0.00},
   {lvl:3,  spawnInterval:55, burst:2, hpMul:1.78, speedMul:1.37, dmgMul:1.58, xpMul:1.05, runnerChance:0.15, bruteChance:0.02},
@@ -544,11 +567,11 @@ function enemyLevelConfig(level){
   for(const r of ENEMY_LEVEL_RULES){ if(level>=r.lvl) rule=r; else break; }
   const over=Math.max(0, level-16);
   return {
-    spawnInterval:Math.max(20, rule.spawnInterval-over*3),
+    spawnInterval:Math.max(23, Math.round((rule.spawnInterval-over*3)*ENEMY_TUNING.spawnIntervalMul)),
     burst:rule.burst+Math.floor(over/3),
-    hpMul:rule.hpMul+over*0.20,
-    speedMul:rule.speedMul+over*0.028,
-    dmgMul:rule.dmgMul+over*0.16,
+    hpMul:(rule.hpMul+over*0.20)*ENEMY_TUNING.statMul,
+    speedMul:(rule.speedMul+over*0.028)*ENEMY_TUNING.statMul,
+    dmgMul:(rule.dmgMul+over*0.16)*ENEMY_TUNING.statMul,
     xpMul:rule.xpMul+over*0.025,
     runnerChance:clamp(rule.runnerChance+over*0.014,0,0.42),
     bruteChance:clamp(rule.bruteChance+over*0.012,0,0.30),
@@ -588,12 +611,21 @@ function enemySkillLabel(e){
   return e.skills.map(s=>names[s.id]||s.id).join('+');
 }
 
+function formatRunTime(ms){
+  const sec=Math.max(0,Math.floor(ms/1000));
+  const h=Math.floor(sec/3600);
+  const m=Math.floor(sec%3600/60);
+  const s=sec%60;
+  if(h>0) return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+  return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+}
+
 // ---------- game state ----------
 let game=null;
 function newGame(){
   return {
-    t:0, running:true, paused:false,
-    player:{ x:0,y:0, r:13, speed:3.0, hp:120, maxhp:120, lives:0, maxLives:5, xp:0, lvl:1, next:xpForNextLevel(1), kills:0,
+    t:0, elapsedMs:0, lastTime:performance.now(), running:true, paused:false,
+    player:{ x:0,y:0, r:13, speed:INITIAL_PLAYER_STATS.speed, hp:INITIAL_PLAYER_STATS.maxhp, maxhp:INITIAL_PLAYER_STATS.maxhp, lives:0, maxLives:5, xp:0, lvl:1, next:xpForNextLevel(1), kills:0,
              ifr:0, face:1, anim:0, frame:0, moving:false },
     cam:{x:0,y:0},
     enemies:[], bullets:[], enemyShots:[], orbs:[], particles:[], damageTexts:[], debuffs:[],
@@ -608,7 +640,7 @@ function newGame(){
       orbit:{ lvl:0, ang:0, dmg:14, count:0, radius:60, size:11, spin:0.06 },       // orbiting blades
       nova:{ lvl:0, cd:0, rate:160, dmg:26, radius:90 }                  // shockwave
     },
-    stats:{ pickup:60, regen:0, dmgMul:1, armor:0, thorns:0, crit:0.05, critMul:1.6, xpMul:1, luck:0, hpRegenT:0 },
+    stats:{ pickup:INITIAL_STATS.pickup, regen:INITIAL_STATS.regen, dmgMul:INITIAL_STATS.dmgMul, armor:INITIAL_STATS.armor, thorns:0, crit:INITIAL_STATS.crit, critMul:1.6, xpMul:INITIAL_STATS.xpMul, luck:INITIAL_STATS.luck, hpRegenT:0 },
     flash:0,
   };
 }
@@ -728,6 +760,7 @@ function enemySkillSet(e,p){
 // ---------- weapons fire ----------
 function fireBolt(){
   const g=game,p=p0(),w=g.weapons.bolt;
+  SFX.bolt();
   // target nearest enemy
   let near=null,nd=1e9;
   for(const e of g.enemies){
@@ -796,15 +829,16 @@ function addTempDebuff(seed,power){
 
 function permanentTargets(){
   const g=game,p=g.player, out=[];
-  if(p.speed>3.02) out.push({id:'speed',name:'移速',apply:()=>{p.speed=Math.max(3,p.speed*0.96);}});
-  if(g.stats.dmgMul>1.01) out.push({id:'damage',name:'伤害',apply:()=>{g.stats.dmgMul=Math.max(1,g.stats.dmgMul*0.96);}});
-  if(g.stats.pickup>60) out.push({id:'pickup',name:'拾取',apply:()=>{g.stats.pickup=Math.max(60,g.stats.pickup-12);}});
-  if(g.stats.xpMul>1.01) out.push({id:'xp',name:'经验',apply:()=>{g.stats.xpMul=Math.max(1,g.stats.xpMul*0.96);}});
-  if(g.stats.luck>0) out.push({id:'luck',name:'幸运',apply:()=>{g.stats.luck=Math.max(0,g.stats.luck-0.03);}});
-  if(g.stats.crit>0.051) out.push({id:'crit',name:'暴击',apply:()=>{g.stats.crit=Math.max(0.05,g.stats.crit-0.02);}});
-  if(g.stats.armor>0) out.push({id:'armor',name:'护甲',apply:()=>{g.stats.armor=Math.max(0,g.stats.armor-1);}});
-  if(g.stats.regen>0) out.push({id:'regen',name:'回复',apply:()=>{g.stats.regen=Math.max(0,g.stats.regen-0.35);}});
-  if(p.maxhp>120) out.push({id:'maxhp',name:'生命上限',apply:()=>{p.maxhp=Math.max(120,p.maxhp-5);p.hp=Math.min(p.hp,p.maxhp);}});
+  const above=(value,base,eps=0.001)=>value>base+eps;
+  if(above(p.speed,INITIAL_PLAYER_STATS.speed,0.02)) out.push({id:'speed',name:'移速',apply:()=>{p.speed=Math.max(INITIAL_PLAYER_STATS.speed,p.speed*0.96);}});
+  if(above(g.stats.dmgMul,INITIAL_STATS.dmgMul,0.01)) out.push({id:'damage',name:'伤害',apply:()=>{g.stats.dmgMul=Math.max(INITIAL_STATS.dmgMul,g.stats.dmgMul*0.96);}});
+  if(above(g.stats.pickup,INITIAL_STATS.pickup)) out.push({id:'pickup',name:'拾取',apply:()=>{g.stats.pickup=Math.max(INITIAL_STATS.pickup,g.stats.pickup-12);}});
+  if(above(g.stats.xpMul,INITIAL_STATS.xpMul,0.01)) out.push({id:'xp',name:'经验',apply:()=>{g.stats.xpMul=Math.max(INITIAL_STATS.xpMul,g.stats.xpMul*0.96);}});
+  if(above(g.stats.luck,INITIAL_STATS.luck)) out.push({id:'luck',name:'幸运',apply:()=>{g.stats.luck=Math.max(INITIAL_STATS.luck,g.stats.luck-0.03);}});
+  if(above(g.stats.crit,INITIAL_STATS.crit,0.001)) out.push({id:'crit',name:'暴击',apply:()=>{g.stats.crit=Math.max(INITIAL_STATS.crit,g.stats.crit-0.02);}});
+  if(above(g.stats.armor,INITIAL_STATS.armor)) out.push({id:'armor',name:'护甲',apply:()=>{g.stats.armor=Math.max(INITIAL_STATS.armor,g.stats.armor-1);}});
+  if(above(g.stats.regen,INITIAL_STATS.regen)) out.push({id:'regen',name:'回复',apply:()=>{g.stats.regen=Math.max(INITIAL_STATS.regen,g.stats.regen-0.35);}});
+  if(above(p.maxhp,INITIAL_PLAYER_STATS.maxhp)) out.push({id:'maxhp',name:'生命上限',apply:()=>{p.maxhp=Math.max(INITIAL_PLAYER_STATS.maxhp,p.maxhp-5);p.hp=Math.min(p.hp,p.maxhp);}});
   return out;
 }
 
@@ -821,8 +855,8 @@ function addPermanentDebuff(seed){
 }
 
 function trySkillDebuff(kind,power){
-  const tempChance=clamp(({orb:0.68,blade:0.74,nova:0.80,dash:0.64}[kind]||0.68)+(power||1)*0.025,0,0.92);
-  const permChance=clamp(({orb:0.035,blade:0.045,nova:0.055,dash:0.030}[kind]||0.035)+(power||1)*0.006,0,0.095);
+  const tempChance=clamp((({orb:0.68,blade:0.74,nova:0.80,dash:0.64}[kind]||0.68)+(power||1)*0.025)*DEBUFF_CHANCE_MUL.temp,0,0.60);
+  const permChance=clamp((({orb:0.035,blade:0.045,nova:0.055,dash:0.030}[kind]||0.035)+(power||1)*0.006)*DEBUFF_CHANCE_MUL.perm,0,0.05);
   if(Math.random()<tempChance) addTempDebuff(kind,power);
   if(Math.random()<permChance) addPermanentDebuff(kind);
 }
@@ -1017,14 +1051,18 @@ function killEnemy(e){
   const xpStyle=xpOrbStyle(e.xp);
   game.orbs.push({type:'xp',x:e.x,y:e.y,xp:e.xp,r:xpStyle.r,col:xpStyle.col,core:xpStyle.core,glow:xpStyle.glow});
   if(e.dropReward){
-    game.orbs.push({type:'upgrade',x:e.x+rand(-8,8),y:e.y+rand(-8,8),upgradeId:e.dropReward.id,ico:e.dropReward.ico,r:8});
+    game.orbs.push({type:'upgrade',x:e.x+rand(-8,8),y:e.y+rand(-8,8),upgradeId:e.dropReward.id,ico:e.dropReward.ico,name:e.dropReward.name,r:8});
   }
   for(let i=0;i<8;i++)game.particles.push({x:e.x,y:e.y,vx:rand(-3,3),vy:rand(-3,3),life:20,max:20,col:e.color,r:3});
 }
 
 // ---------- update ----------
 function update(){
-  const g=game; if(!g||!g.running||g.paused) return;
+  const g=game; if(!g||!g.running) return;
+  const now=performance.now();
+  if(g.paused){ g.lastTime=now; return; }
+  g.elapsedMs+=Math.max(0,now-g.lastTime);
+  g.lastTime=now;
   g.t++;
   const p=g.player;
   updateDebuffs();
@@ -1283,10 +1321,10 @@ function randomDropUpgrade(){
   let roll=rand(0,total);
   for(const u of pool){
     roll-=u.dropWeight||1;
-    if(roll<=0) return {id:u.id,ico:u.ico};
+    if(roll<=0) return {id:u.id,ico:u.ico,name:u.name};
   }
   const fallback=pool[0];
-  return {id:fallback.id,ico:fallback.ico};
+  return {id:fallback.id,ico:fallback.ico,name:fallback.name};
 }
 function rollEnemyDropReward(e,level){
   const tierChance={small:0.006,normal:0.016,large:0.045,elite:0.11,giant:0.22}[e.tier]||0.014;
@@ -1524,6 +1562,7 @@ function draw(){
       ctx.shadowBlur=0;
       ctx.font='12px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText(o.ico||'★',o.x,o.y+0.5);
+      if(o.name) drawLabel(o.x,o.y-o.r-14,[{txt:o.name,col:'#ffd86b'}],'rgba(255,216,107,0.72)');
     } else {
       const pulse=1+Math.sin(g.t*0.1+o.x*0.01)*0.05;
       ctx.fillStyle=o.col||'#7ad3ff'; ctx.shadowColor=o.glow||'#7ad3ff'; ctx.shadowBlur=10+o.r*1.3;
@@ -1789,13 +1828,13 @@ function draw(){
 
 // ---------- HUD ----------
 function pct(v){ return Math.round(v*100)+'%'; }
-function hudChip(text){
-  return '<span class="hudChip">'+text+'</span>';
+function hudChip(text,kind){
+  return '<span class="hudChip'+(kind?' '+kind:'')+'">'+text+'</span>';
 }
-function chipRow(items){
+function chipRow(items,kind){
   if(items.length===0) return '<span class="hudLine">暂无</span>';
   let html='<span class="hudChips">';
-  for(const item of items) html+=hudChip(item);
+  for(const item of items) html+=hudChip(item,kind);
   html+='</span>';
   return html;
 }
@@ -1815,8 +1854,22 @@ function killRarityItems(byRarity){
 function upgradeItems(log){
   return log.slice(-10).reverse().map(item=>item.source==='drop'?'装备 '+item.name:item.source==='curse'?'诅咒 '+item.name:'升级 '+item.name);
 }
+function signedPct(v){
+  const n=Math.round(v*100);
+  return (n>0?'+':'')+n+'%';
+}
+function debuffEffectText(d){
+  const parts=[];
+  if(d.mul!=null) parts.push('效果 '+signedPct(d.mul-1));
+  if(d.flat!=null) parts.push('数值 '+(d.flat>0?'+':'')+d.flat);
+  return parts.join(' · ')||'负面状态';
+}
 function debuffItems(debuffs){
-  return debuffs.slice(0,6).map(d=>d.name+' '+Math.ceil(d.life/60)+'秒');
+  return debuffs.slice(0,8).map(d=>d.name+' '+Math.ceil(d.life/60)+'秒 · '+debuffEffectText(d));
+}
+function debuffHudHtml(debuffs){
+  if(debuffs.length===0) return '<span class="hudTitle">异常状态</span><span class="hudEmpty">当前无负面状态</span>';
+  return '<span class="hudTitle">异常状态</span>'+chipRow(debuffItems(debuffs),'debuff');
 }
 function updateHUD(){
   const g=game,p=g.player;
@@ -1833,14 +1886,13 @@ function updateHUD(){
   }
   document.getElementById('lvlTag').textContent='Lv '+p.lvl;
   document.getElementById('killTag').textContent='击杀 '+p.kills;
-  const sec=Math.floor(g.t/60);
-  document.getElementById('timeTag').textContent=String(Math.floor(sec/60)).padStart(2,'0')+':'+String(sec%60).padStart(2,'0');
+  document.getElementById('timeTag').textContent='用时 '+formatRunTime(g.elapsedMs);
   document.getElementById('hudStats').innerHTML=
     '<span class="hudTitle">属性</span>'+
     '<span class="hudLine">移动速度 <b>'+moveSpeed().toFixed(1)+'</b> · 伤害倍率 <b>'+pct(damageMul())+'</b> · 暴击率 <b>'+pct(critChance())+'</b></span>'+
     '<span class="hudLine">护甲 <b>'+armorValue()+'</b> · 生命恢复 <b>'+regenValue().toFixed(1)+'</b>/秒 · 拾取范围 <b>'+Math.round(pickupRange())+'</b></span>'+
-    '<span class="hudLine">经验倍率 <b>'+pct(xpMul())+'</b> · 幸运 <b>'+pct(luckValue())+'</b></span>'+
-    (g.debuffs.length?'<span class="hudLine">异常</span>'+chipRow(debuffItems(g.debuffs)):'');
+    '<span class="hudLine">经验倍率 <b>'+pct(xpMul())+'</b> · 幸运 <b>'+pct(luckValue())+'</b></span>';
+  document.getElementById('hudDebuffs').innerHTML=debuffHudHtml(g.debuffs);
   document.getElementById('hudUpgrades').innerHTML=
     '<span class="hudTitle">奖励</span>'+chipRow(upgradeItems(g.upgradeLog));
   document.getElementById('hudKills').innerHTML=
@@ -1882,9 +1934,8 @@ function gameOver(){
   const g=game; g.running=false;
   SFX.gameOver();
   document.getElementById('pauseBtn').classList.add('hidden');
-  const sec=Math.floor(g.t/60);
   document.getElementById('overStats').innerHTML=
-    `存活时间 <b>${String(Math.floor(sec/60)).padStart(2,'0')}:${String(sec%60).padStart(2,'0')}</b><br>`+
+    `本局用时 <b>${formatRunTime(g.elapsedMs)}</b><br>`+
     `等级 <b>${g.player.lvl}</b> · 击杀 <b>${g.player.kills}</b>`;
   document.getElementById('overScreen').classList.remove('hidden');
 }
