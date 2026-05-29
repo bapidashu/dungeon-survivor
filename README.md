@@ -3,7 +3,7 @@
 一个《吸血鬼幸存者》风格的网页肉鸽小游戏。自动攻击逼近的怪物，吃经验晶石升级，每次升级三选一变强，看你能活多久。
 
 ## 在线试玩
-👉 部署后这里会是你的 GitHub Pages 链接
+👉 https://iamyahaha.github.io/dungeon-survivor/
 
 ## 玩法
 - **电脑**：`WASD` / 方向键移动，`P` 或 `Esc` 暂停
