@@ -152,6 +152,15 @@
     backdrop-filter: blur(4px);
   }
   #pauseBtn:active { transform:scale(.92); }
+  #soundBtn {
+    position:absolute; top:46px; right:66px; z-index:5;
+    width:44px; height:44px; border-radius:12px;
+    background:rgba(27,27,44,.8); border:1px solid #33334d;
+    color:#e8e8f0; font-size:18px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    backdrop-filter: blur(4px);
+  }
+  #soundBtn:active { transform:scale(.92); }
 </style>
 </head>
 <body>
@@ -189,6 +198,7 @@
 
   <!-- Pause button -->
   <button id="pauseBtn" class="hidden">⏸</button>
+  <button id="soundBtn" title="声音开关">🔊</button>
 
   <!-- Pause screen -->
   <div id="pauseScreen" class="overlay hidden">
@@ -227,6 +237,96 @@ function resize(){
   ctx.setTransform(DPR,0,0,DPR,0,0);
 }
 window.addEventListener('resize', resize); resize();
+
+// ---------- audio / SFX ----------
+const SFX = (() => {
+  let actx=null, master=null, enabled=true;
+  let lastHit=0, lastCrit=0, lastPick=0, lastKill=0;
+  function ensure(){
+    if(actx) return actx;
+    try {
+      const AC=window.AudioContext||window.webkitAudioContext;
+      if(!AC) return null;
+      actx=new AC();
+      master=actx.createGain();
+      master.gain.value=0.45;
+      master.connect(actx.destination);
+    } catch(e){ actx=null; }
+    return actx;
+  }
+  function resume(){ const a=ensure(); if(a && a.state==='suspended') a.resume(); }
+  function setEnabled(v){ enabled=!!v; if(master) master.gain.value = enabled?0.45:0; }
+  function isEnabled(){ return enabled; }
+  // single tone with envelope
+  function tone(freq, dur, type, gain, attack, t0){
+    const a=ensure(); if(!a||!enabled) return;
+    const t=t0||a.currentTime;
+    const o=a.createOscillator(), g=a.createGain();
+    o.type=type||'sine'; o.frequency.setValueAtTime(freq,t);
+    g.gain.setValueAtTime(0,t);
+    g.gain.linearRampToValueAtTime(gain||0.2, t+(attack||0.005));
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t+dur+0.02);
+    return o;
+  }
+  // pitch sweep
+  function sweep(f1,f2,dur,type,gain,t0){
+    const a=ensure(); if(!a||!enabled) return;
+    const t=t0||a.currentTime;
+    const o=a.createOscillator(), g=a.createGain();
+    o.type=type||'sawtooth';
+    o.frequency.setValueAtTime(f1,t);
+    o.frequency.exponentialRampToValueAtTime(Math.max(20,f2), t+dur);
+    g.gain.setValueAtTime(0,t);
+    g.gain.linearRampToValueAtTime(gain||0.2, t+0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t+dur+0.02);
+  }
+  // short noise burst
+  function noise(dur,gain,filterFreq){
+    const a=ensure(); if(!a||!enabled) return;
+    const len=Math.max(1,Math.floor(a.sampleRate*dur));
+    const buf=a.createBuffer(1,len,a.sampleRate);
+    const d=buf.getChannelData(0);
+    for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*(1-i/len);
+    const src=a.createBufferSource(); src.buffer=buf;
+    const g=a.createGain(); g.gain.value=gain||0.2;
+    const bp=a.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=filterFreq||1200; bp.Q.value=0.8;
+    src.connect(bp); bp.connect(g); g.connect(master);
+    src.start();
+  }
+  return {
+    resume, setEnabled, isEnabled,
+    hit(){ const now=performance.now(); if(now-lastHit<55) return; lastHit=now;
+      sweep(520,260,0.08,'square',0.10); noise(0.05,0.08,1800); },
+    crit(){ const now=performance.now(); if(now-lastCrit<70) return; lastCrit=now;
+      sweep(1100,420,0.16,'sawtooth',0.16); noise(0.09,0.12,2600); tone(1600,0.10,'triangle',0.10,0.002); },
+    kill(){ const now=performance.now(); if(now-lastKill<40) return; lastKill=now;
+      sweep(300,90,0.18,'sawtooth',0.14); noise(0.12,0.10,600); },
+    pickupXp(){ const now=performance.now(); if(now-lastPick<30) return; lastPick=now;
+      const a=ensure(); if(!a) return; const t=a.currentTime;
+      tone(880,0.07,'triangle',0.10,0.003,t); tone(1320,0.09,'triangle',0.10,0.003,t+0.04); },
+    pickupDrop(){
+      const a=ensure(); if(!a) return; const t=a.currentTime;
+      tone(740,0.10,'triangle',0.14,0.003,t);
+      tone(988,0.10,'triangle',0.14,0.003,t+0.05);
+      tone(1480,0.16,'sine',0.12,0.003,t+0.10); },
+    levelUp(){
+      const a=ensure(); if(!a) return; const t=a.currentTime;
+      // arpeggio fanfare C5 E5 G5 C6
+      const notes=[523.25,659.25,783.99,1046.5];
+      notes.forEach((f,i)=>{ tone(f,0.22,'triangle',0.18,0.005,t+i*0.07); tone(f*2,0.18,'sine',0.06,0.003,t+i*0.07); });
+      tone(1568,0.35,'triangle',0.14,0.01,t+notes.length*0.07); },
+    hurt(){ sweep(380,80,0.22,'sawtooth',0.22); noise(0.18,0.18,420); },
+    gameOver(){
+      const a=ensure(); if(!a) return; const t=a.currentTime;
+      const notes=[392,329.63,261.63,196];
+      notes.forEach((f,i)=>{ tone(f,0.35,'sawtooth',0.20,0.01,t+i*0.18); });
+      sweep(220,55,0.9,'sawtooth',0.18,t+notes.length*0.18); }
+  };
+})();
 
 // ---------- assets ----------
 const heroImg = new Image();
@@ -737,6 +837,7 @@ function damagePlayer(amount, sx, sy, skillKind, power){
   if(p.ifr>0) return false;
   const taken=Math.max(1,Math.round(amount)-armorValue());
   p.hp-=taken; p.ifr=42; g.flash=8;
+  SFX.hurt();
   if(skillKind) trySkillDebuff(skillKind,power||1);
   if(g.stats.thorns>0 && sx!=null && sy!=null){
     let target=null,best=44;
@@ -898,16 +999,19 @@ function hitEnemy(e,dmg,kx,ky,kmag,opts){
     e.hitFlash=12;
     game.damageTexts.push({x:e.x,y:e.y-e.r-4,txt:'暴击! -'+amount,life:52,max:52,vy:-0.95,col:'#ffe066',stroke:'#3a1a02',size:20,crit:true});
     for(let i=0;i<10;i++)game.particles.push({x:e.x,y:e.y,vx:rand(-3.6,3.6),vy:rand(-3.6,3.6),life:18,max:18,col:'#ffd86b',r:3.4});
+    SFX.crit();
   } else {
     e.hitFlash=Math.max(e.hitFlash||0,4);
     game.damageTexts.push({x:e.x,y:e.y-e.r,txt:'血量-'+amount,life:32,max:32,vy:-0.82,col:dmg>45?'#ffcf5a':'#ff5d6c',stroke:'#24070c'});
     for(let i=0;i<3;i++)game.particles.push({x:e.x,y:e.y,vx:rand(-2,2),vy:rand(-2,2),life:12,max:12,col:e.color,r:3});
+    SFX.hit();
   }
   if(e.hp<=0) killEnemy(e);
 }
 function killEnemy(e){
   e.dead=true;
   game.player.kills++;
+  SFX.kill();
   game.killStats.byLevel[e.lvl]=(game.killStats.byLevel[e.lvl]||0)+1;
   game.killStats.byRarity[e.rarity]=(game.killStats.byRarity[e.rarity]||0)+1;
   const xpStyle=xpOrbStyle(e.xp);
@@ -1065,10 +1169,12 @@ function update(){
     if(d<p.r+o.r){ o.got=true;
       if(o.type==='upgrade'){
         applyUpgrade(upgradeById(o.upgradeId),'drop');
+        SFX.pickupDrop();
       } else {
         const gain=Math.max(1,Math.round(o.xp*xpMul()));
         p.xp+=gain;
         g.damageTexts.push({x:p.x+p.face*24,y:p.y-p.r-8,txt:'exp+'+gain,life:34,max:34,vy:-0.55,col:'#7ad3ff'});
+        SFX.pickupXp();
       }
       for(let i=0;i<4;i++)g.particles.push({x:o.x,y:o.y,vx:rand(-2,2),vy:rand(-2,2),life:14,max:14,col:o.col||'#7ad3ff',r:2});
       if(p.xp>=p.next){ levelUp(); }
@@ -1094,6 +1200,7 @@ function levelUp(){
   p.xp-=p.next; p.lvl++;
   p.next=xpForNextLevel(p.lvl);
   g.paused=true;
+  SFX.levelUp();
   showUpgrades();
 }
 
@@ -1104,52 +1211,58 @@ function learnBoltType(w,typeId,onRepeat){
 }
 
 function upgradePool(){
-  const g=game,w=g.weapons,s=g.stats;
+  const g=game,w=g.weapons,s=g.stats,p=g.player;
+  // 玩家每升一级，升级奖励幅度提高 20%（线性）
+  const G=1+0.20*Math.max(0,p.lvl-1);
+  const addI=n=>Math.max(1,Math.round(n*G));   // 整数加成
+  const addF=n=>n*G;                            // 浮点加成
+  const mulP=pct=>1+pct*G;                      // 百分比加成倍率（正向）
+  const mulN=pct=>Math.max(0.05,1-pct*G);       // 百分比减少倍率（用于冷却等）
   const pool=[];
-  pool.push({id:'bolt_count',ico:'🔮',name:'魔弹强化',dropWeight:10,desc:()=> w.bolt.count<5?'多发射一枚魔弹':'魔弹伤害+8',
-    lvl:w.bolt.lvl,apply:()=>{ if(w.bolt.count<5)w.bolt.count++; else w.bolt.dmg+=8; w.bolt.lvl++; }});
-  pool.push({id:'bolt_rate',ico:'⚡',name:'急速施法',dropWeight:9,desc:()=>'魔弹冷却 -15%',lvl:'',apply:()=>{ w.bolt.rate=Math.max(12,Math.round(w.bolt.rate*0.85)); }});
-  pool.push({id:'bolt_pierce',ico:'🪡',name:'穿透魔弹',dropWeight:7,desc:()=> w.bolt.pierce<4?'魔弹穿透+1':'魔弹伤害+10',lvl:w.bolt.pierce,
-    apply:()=>{ if(w.bolt.pierce<4)w.bolt.pierce++; else w.bolt.dmg+=10; }});
-  pool.push({id:'bolt_speed',ico:'💫',name:'星轨加速',dropWeight:7,desc:()=>'魔弹速度+12% 飞行时间+8%',lvl:'',apply:()=>{ w.bolt.speed*=1.12; w.bolt.life=Math.round(w.bolt.life*1.08); }});
-  pool.push({id:'bolt_size',ico:'🟦',name:'奥术膨胀',dropWeight:7,desc:()=>'魔弹体积+15% 伤害+4',lvl:'',apply:()=>{ w.bolt.size=Math.min(13,w.bolt.size*1.15); w.bolt.dmg+=4; }});
-  pool.push({id:'bolt_arcane',ico:'🔷',name:'奥术刻印',dropWeight:6,desc:()=> w.bolt.types.includes('arcane')?'奥术易伤更频繁：魔弹冷却-8%':'解锁奥术魔弹：圆形，使命中目标易伤',
-    lvl:w.bolt.types.includes('arcane')?1:'',apply:()=>{ learnBoltType(w,'arcane',()=>{ w.bolt.rate=Math.max(12,Math.round(w.bolt.rate*0.92)); }); }});
-  pool.push({id:'bolt_flame',ico:'🔥',name:'烈焰魔弹',dropWeight:6,desc:()=> w.bolt.types.includes('flame')?'烈焰爆裂强化：魔弹伤害+8':'解锁烈焰魔弹：火滴形，范围爆裂',
-    lvl:w.bolt.types.includes('flame')?1:'',apply:()=>{ learnBoltType(w,'flame',()=>{ w.bolt.dmg+=8; }); }});
+  pool.push({id:'bolt_count',ico:'🔮',name:'魔弹强化',dropWeight:10,desc:()=> w.bolt.count<5?'多发射一枚魔弹':`魔弹伤害+${addI(8)}`,
+    lvl:w.bolt.lvl,apply:()=>{ if(w.bolt.count<5)w.bolt.count++; else w.bolt.dmg+=addI(8); w.bolt.lvl++; }});
+  pool.push({id:'bolt_rate',ico:'⚡',name:'急速施法',dropWeight:9,desc:()=>`魔弹冷却 -${Math.round(15*G)}%`,lvl:'',apply:()=>{ w.bolt.rate=Math.max(8,Math.round(w.bolt.rate*mulN(0.15))); }});
+  pool.push({id:'bolt_pierce',ico:'🪡',name:'穿透魔弹',dropWeight:7,desc:()=> w.bolt.pierce<4?'魔弹穿透+1':`魔弹伤害+${addI(10)}`,lvl:w.bolt.pierce,
+    apply:()=>{ if(w.bolt.pierce<4)w.bolt.pierce++; else w.bolt.dmg+=addI(10); }});
+  pool.push({id:'bolt_speed',ico:'💫',name:'星轨加速',dropWeight:7,desc:()=>`魔弹速度+${Math.round(12*G)}% 飞行时间+${Math.round(8*G)}%`,lvl:'',apply:()=>{ w.bolt.speed*=mulP(0.12); w.bolt.life=Math.round(w.bolt.life*mulP(0.08)); }});
+  pool.push({id:'bolt_size',ico:'🟦',name:'奥术膨胀',dropWeight:7,desc:()=>`魔弹体积+${Math.round(15*G)}% 伤害+${addI(4)}`,lvl:'',apply:()=>{ w.bolt.size=Math.min(16,w.bolt.size*mulP(0.15)); w.bolt.dmg+=addI(4); }});
+  pool.push({id:'bolt_arcane',ico:'🔷',name:'奥术刻印',dropWeight:6,desc:()=> w.bolt.types.includes('arcane')?`奥术易伤更频繁：魔弹冷却-${Math.round(8*G)}%`:'解锁奥术魔弹：圆形，使命中目标易伤',
+    lvl:w.bolt.types.includes('arcane')?1:'',apply:()=>{ learnBoltType(w,'arcane',()=>{ w.bolt.rate=Math.max(8,Math.round(w.bolt.rate*mulN(0.08))); }); }});
+  pool.push({id:'bolt_flame',ico:'🔥',name:'烈焰魔弹',dropWeight:6,desc:()=> w.bolt.types.includes('flame')?`烈焰爆裂强化：魔弹伤害+${addI(8)}`:'解锁烈焰魔弹：火滴形，范围爆裂',
+    lvl:w.bolt.types.includes('flame')?1:'',apply:()=>{ learnBoltType(w,'flame',()=>{ w.bolt.dmg+=addI(8); }); }});
   pool.push({id:'bolt_frost',ico:'❄️',name:'霜冻魔弹',dropWeight:6,desc:()=> w.bolt.types.includes('frost')?'霜冻穿透强化：魔弹穿透+1':'解锁霜冻魔弹：冰棱形，减速敌人',
     lvl:w.bolt.types.includes('frost')?1:'',apply:()=>{ learnBoltType(w,'frost',()=>{ w.bolt.pierce++; }); }});
-  pool.push({id:'bolt_thunder',ico:'⚡',name:'雷光魔弹',dropWeight:6,desc:()=> w.bolt.types.includes('thunder')?'雷光魔弹伤害+8':'解锁雷光魔弹：高速、穿透、连锁',
-    lvl:w.bolt.types.includes('thunder')?1:'',apply:()=>{ learnBoltType(w,'thunder',()=>{ w.bolt.dmg+=8; }); }});
-  pool.push({id:'bolt_void',ico:'🟣',name:'虚空魔弹',dropWeight:5,desc:()=> w.bolt.types.includes('void')?'虚空魔弹伤害+10':'解锁虚空魔弹：更大、更重、更强',
-    lvl:w.bolt.types.includes('void')?1:'',apply:()=>{ learnBoltType(w,'void',()=>{ w.bolt.dmg+=10; }); }});
+  pool.push({id:'bolt_thunder',ico:'⚡',name:'雷光魔弹',dropWeight:6,desc:()=> w.bolt.types.includes('thunder')?`雷光魔弹伤害+${addI(8)}`:'解锁雷光魔弹：高速、穿透、连锁',
+    lvl:w.bolt.types.includes('thunder')?1:'',apply:()=>{ learnBoltType(w,'thunder',()=>{ w.bolt.dmg+=addI(8); }); }});
+  pool.push({id:'bolt_void',ico:'🟣',name:'虚空魔弹',dropWeight:5,desc:()=> w.bolt.types.includes('void')?`虚空魔弹伤害+${addI(10)}`:'解锁虚空魔弹：更大、更重、更强',
+    lvl:w.bolt.types.includes('void')?1:'',apply:()=>{ learnBoltType(w,'void',()=>{ w.bolt.dmg+=addI(10); }); }});
   pool.push({id:'bolt_venom',ico:'☘️',name:'毒棘魔弹',dropWeight:5,desc:()=> w.bolt.types.includes('venom')?'毒棘魔弹更密集：魔弹数量/伤害提升':'解锁毒棘魔弹：针形，造成持续伤害',
-    lvl:w.bolt.types.includes('venom')?1:'',apply:()=>{ learnBoltType(w,'venom',()=>{ if(w.bolt.count<5)w.bolt.count++; else w.bolt.dmg+=7; }); }});
-  pool.push({id:'bolt_wind',ico:'🌙',name:'风刃魔弹',dropWeight:5,desc:()=> w.bolt.types.includes('wind')?'风刃魔弹更快：速度+10% 伤害+4':'解锁风刃魔弹：月牙形，切割并击退',
-    lvl:w.bolt.types.includes('wind')?1:'',apply:()=>{ learnBoltType(w,'wind',()=>{ w.bolt.speed*=1.1; w.bolt.dmg+=4; }); }});
-  pool.push({id:'orbit_blade',ico:'🗡️',name:'环绕飞刃',dropWeight:10,desc:()=> w.orbit.count===0?'获得1把环绕飞刃':'增加1把飞刃 / 伤害+6',
-    lvl:w.orbit.lvl,apply:()=>{ w.orbit.count++; w.orbit.dmg+=6; w.orbit.lvl++; }});
+    lvl:w.bolt.types.includes('venom')?1:'',apply:()=>{ learnBoltType(w,'venom',()=>{ if(w.bolt.count<5)w.bolt.count++; else w.bolt.dmg+=addI(7); }); }});
+  pool.push({id:'bolt_wind',ico:'🌙',name:'风刃魔弹',dropWeight:5,desc:()=> w.bolt.types.includes('wind')?`风刃魔弹更快：速度+${Math.round(10*G)}% 伤害+${addI(4)}`:'解锁风刃魔弹：月牙形，切割并击退',
+    lvl:w.bolt.types.includes('wind')?1:'',apply:()=>{ learnBoltType(w,'wind',()=>{ w.bolt.speed*=mulP(0.10); w.bolt.dmg+=addI(4); }); }});
+  pool.push({id:'orbit_blade',ico:'🗡️',name:'环绕飞刃',dropWeight:10,desc:()=> w.orbit.count===0?'获得1把环绕飞刃':`增加1把飞刃 / 伤害+${addI(6)}`,
+    lvl:w.orbit.lvl,apply:()=>{ w.orbit.count++; w.orbit.dmg+=addI(6); w.orbit.lvl++; }});
   if(w.orbit.count>0){
-    pool.push({id:'orbit_area',ico:'⭕',name:'刃环扩张',dropWeight:6,desc:()=>'飞刃范围+18 体积+10%',lvl:'',apply:()=>{ w.orbit.radius+=18; w.orbit.size*=1.1; }});
-    pool.push({id:'orbit_spin',ico:'🌀',name:'回旋加速',dropWeight:6,desc:()=>'飞刃旋转速度+18% 伤害+4',lvl:'',apply:()=>{ w.orbit.spin*=1.18; w.orbit.dmg+=4; }});
+    pool.push({id:'orbit_area',ico:'⭕',name:'刃环扩张',dropWeight:6,desc:()=>`飞刃范围+${addI(18)} 体积+${Math.round(10*G)}%`,lvl:'',apply:()=>{ w.orbit.radius+=addI(18); w.orbit.size*=mulP(0.10); }});
+    pool.push({id:'orbit_spin',ico:'🌀',name:'回旋加速',dropWeight:6,desc:()=>`飞刃旋转速度+${Math.round(18*G)}% 伤害+${addI(4)}`,lvl:'',apply:()=>{ w.orbit.spin*=mulP(0.18); w.orbit.dmg+=addI(4); }});
   }
-  pool.push({id:'nova',ico:'💥',name:'冲击波',dropWeight:9,desc:()=> w.nova.lvl===0?'周期性震退周围敌人':'冲击波范围+20 伤害+12',
-    lvl:w.nova.lvl,apply:()=>{ if(w.nova.lvl===0)w.nova.lvl=1; else {w.nova.radius+=20;w.nova.dmg+=12;} w.nova.lvl++; w.nova.rate=Math.max(70,w.nova.rate-10);}});
+  pool.push({id:'nova',ico:'💥',name:'冲击波',dropWeight:9,desc:()=> w.nova.lvl===0?'周期性震退周围敌人':`冲击波范围+${addI(20)} 伤害+${addI(12)}`,
+    lvl:w.nova.lvl,apply:()=>{ if(w.nova.lvl===0)w.nova.lvl=1; else {w.nova.radius+=addI(20);w.nova.dmg+=addI(12);} w.nova.lvl++; w.nova.rate=Math.max(50,w.nova.rate-addI(10));}});
   if(w.nova.lvl>0){
-    pool.push({id:'nova_focus',ico:'🔆',name:'震荡核心',dropWeight:6,desc:()=>'冲击波冷却-12% 伤害+8',lvl:'',apply:()=>{ w.nova.rate=Math.max(55,Math.round(w.nova.rate*0.88)); w.nova.dmg+=8; }});
+    pool.push({id:'nova_focus',ico:'🔆',name:'震荡核心',dropWeight:6,desc:()=>`冲击波冷却-${Math.round(12*G)}% 伤害+${addI(8)}`,lvl:'',apply:()=>{ w.nova.rate=Math.max(40,Math.round(w.nova.rate*mulN(0.12))); w.nova.dmg+=addI(8); }});
   }
-  pool.push({id:'max_hp',ico:'❤️',name:'强健体魄',dropWeight:8,desc:()=>'最大生命+25 并回满',lvl:'',apply:()=>{ p0().maxhp+=25; p0().hp=p0().maxhp; }});
+  pool.push({id:'max_hp',ico:'❤️',name:'强健体魄',dropWeight:8,desc:()=>`最大生命+${addI(25)} 并回满`,lvl:'',apply:()=>{ p0().maxhp+=addI(25); p0().hp=p0().maxhp; }});
   pool.push({id:'extra_life',ico:'💖',name:'额外生命',dropWeight:5,desc:()=> p0().lives<p0().maxLives?'获得 1 条额外生命（倒下时自动复活并回满）':'生命已满，改为回满当前生命',
     lvl:p0().lives,apply:()=>{ const pp=p0(); if(pp.lives<pp.maxLives) pp.lives++; else pp.hp=pp.maxhp; }});
-  pool.push({id:'move_speed',ico:'🥾',name:'轻盈步伐',dropWeight:8,desc:()=>'移动速度+12%',lvl:'',apply:()=>{ p0().speed*=1.12; }});
-  pool.push({id:'pickup',ico:'🧲',name:'磁力拾取',dropWeight:8,desc:()=>'晶石和奖励拾取范围+40',lvl:'',apply:()=>{ g.stats.pickup+=40; }});
-  pool.push({id:'damage',ico:'✨',name:'力量灌注',dropWeight:9,desc:()=>'全武器伤害+12%',lvl:'',apply:()=>{ g.stats.dmgMul*=1.12; }});
-  pool.push({id:'regen',ico:'🌿',name:'生命恢复',dropWeight:6,desc:()=>'每秒回复+1.5 生命',lvl:'',apply:()=>{ g.stats.regen+=1.5; }});
-  pool.push({id:'armor',ico:'🛡️',name:'护甲镀层',dropWeight:7,desc:()=>'受到的碰撞伤害-2',lvl:s.armor,apply:()=>{ s.armor+=2; }});
-  pool.push({id:'thorns',ico:'🌵',name:'荆棘反击',dropWeight:6,desc:()=>'受击时反伤+12',lvl:s.thorns,apply:()=>{ s.thorns+=12; }});
-  pool.push({id:'crit',ico:'🎯',name:'弱点洞察',dropWeight:7,desc:()=>'暴击率+8% 暴击伤害+10%',lvl:'',apply:()=>{ s.crit=Math.min(0.65,s.crit+0.08); s.critMul+=0.1; }});
-  pool.push({id:'xp_gain',ico:'📘',name:'学识汲取',dropWeight:7,desc:()=>'经验获取+15%',lvl:'',apply:()=>{ s.xpMul*=1.15; }});
-  pool.push({id:'luck',ico:'🍀',name:'幸运星芒',dropWeight:5,desc:()=>'怪物掉落强化奖励概率+8%',lvl:'',apply:()=>{ s.luck+=0.08; }});
+  pool.push({id:'move_speed',ico:'🥾',name:'轻盈步伐',dropWeight:8,desc:()=>`移动速度+${Math.round(12*G)}%`,lvl:'',apply:()=>{ p0().speed*=mulP(0.12); }});
+  pool.push({id:'pickup',ico:'🧲',name:'磁力拾取',dropWeight:8,desc:()=>`晶石和奖励拾取范围+${addI(40)}`,lvl:'',apply:()=>{ g.stats.pickup+=addI(40); }});
+  pool.push({id:'damage',ico:'✨',name:'力量灌注',dropWeight:9,desc:()=>`全武器伤害+${Math.round(12*G)}%`,lvl:'',apply:()=>{ g.stats.dmgMul*=mulP(0.12); }});
+  pool.push({id:'regen',ico:'🌿',name:'生命恢复',dropWeight:6,desc:()=>`每秒回复+${addF(1.5).toFixed(1)} 生命`,lvl:'',apply:()=>{ g.stats.regen+=addF(1.5); }});
+  pool.push({id:'armor',ico:'🛡️',name:'护甲镀层',dropWeight:7,desc:()=>`受到的碰撞伤害-${addI(2)}`,lvl:s.armor,apply:()=>{ s.armor+=addI(2); }});
+  pool.push({id:'thorns',ico:'🌵',name:'荆棘反击',dropWeight:6,desc:()=>`受击时反伤+${addI(12)}`,lvl:s.thorns,apply:()=>{ s.thorns+=addI(12); }});
+  pool.push({id:'crit',ico:'🎯',name:'弱点洞察',dropWeight:7,desc:()=>`暴击率+${Math.round(8*G)}% 暴击伤害+${Math.round(10*G)}%`,lvl:'',apply:()=>{ s.crit=Math.min(0.85,s.crit+0.08*G); s.critMul+=0.10*G; }});
+  pool.push({id:'xp_gain',ico:'📘',name:'学识汲取',dropWeight:7,desc:()=>`经验获取+${Math.round(15*G)}%`,lvl:'',apply:()=>{ s.xpMul*=mulP(0.15); }});
+  pool.push({id:'luck',ico:'🍀',name:'幸运星芒',dropWeight:5,desc:()=>`怪物掉落强化奖励概率+${Math.round(8*G)}%`,lvl:'',apply:()=>{ s.luck+=0.08*G; }});
   return pool;
 }
 function applyUpgrade(u,source){
@@ -1741,6 +1854,7 @@ function loop(){ update(); draw(); requestAnimationFrame(loop); }
 
 // ---------- screens ----------
 function startGame(){
+  SFX.resume();
   game=newGame();
   document.getElementById('startScreen').classList.add('hidden');
   document.getElementById('overScreen').classList.add('hidden');
@@ -1766,6 +1880,7 @@ function quitToMenu(){
 }
 function gameOver(){
   const g=game; g.running=false;
+  SFX.gameOver();
   document.getElementById('pauseBtn').classList.add('hidden');
   const sec=Math.floor(g.t/60);
   document.getElementById('overStats').innerHTML=
@@ -1779,6 +1894,14 @@ document.getElementById('retryBtn').onclick=startGame;
 document.getElementById('pauseBtn').onclick=togglePause;
 document.getElementById('resumeBtn').onclick=togglePause;
 document.getElementById('quitBtn').onclick=quitToMenu;
+(function(){
+  const btn=document.getElementById('soundBtn');
+  let on=true;
+  try { const saved=localStorage.getItem('ds_sound'); if(saved==='0') on=false; } catch(e){}
+  function render(){ btn.textContent = on?'🔊':'🔇'; SFX.setEnabled(on); }
+  render();
+  btn.onclick=()=>{ on=!on; try{ localStorage.setItem('ds_sound', on?'1':'0'); }catch(e){} SFX.resume(); render(); };
+})();
 
 loop();
 })();
