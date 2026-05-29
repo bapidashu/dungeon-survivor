@@ -177,7 +177,7 @@ const runnerImg = new Image();
 let runnerReady=false;
 runnerImg.onload=()=>{ runnerReady=true; };
 runnerImg.src='runner.png';
-const RUN_FRAMES=4, RUN_FW=300, RUN_FH=300;
+const RUN_FRAMES=5, RUN_FW=300, RUN_FH=300;
 
 // ---------- helpers ----------
 const rand=(a,b)=>a+Math.random()*(b-a);
@@ -480,7 +480,8 @@ function draw(){
     const gready = e.green?runnerReady:grubReady;
     if(e.type==='grub' && gready){
       const disp=73;                     // 140% sprite size
-      const fr=Math.floor(e.anim)%GRUB_FRAMES;
+      const frames=e.green?RUN_FRAMES:GRUB_FRAMES;
+      const fr=Math.floor(e.anim)%frames;
       ctx.save();
       ctx.imageSmoothingEnabled=false;
       ctx.translate(e.x,e.y); ctx.scale(e.face,1);
