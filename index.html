@@ -41,11 +41,63 @@
   #hpRow { display:flex; align-items:center; gap:8px; }
   #hpBg { flex:1; height: 14px; background:#2a1414; border:1px solid #5a2a2a; border-radius:7px; overflow:hidden;}
   #hpFill { height:100%; background: linear-gradient(90deg,#ff4d5e,#ff8a96); transition: width .12s linear;}
+  #hpText { min-width: 58px; text-align:right; color:#ffb1ba; }
   #topRow { display:flex; align-items:center; gap:12px; font-size: 13px; font-weight:600; }
   #lvlTag { color:#7ad3ff; }
   #timeTag { color:#ffd86b; }
   #killTag { color:#ff8a96; }
   .hudLabel { font-size:11px; color:#8a8aa8; }
+  #heroHud {
+    display:flex; align-items:center; gap:9px;
+    background:rgba(12,12,24,.76); border:1px solid rgba(122,211,255,.28);
+    border-radius:10px; padding:6px 8px; width:min(100%, 560px);
+    backdrop-filter: blur(4px);
+  }
+  #heroIcon {
+    width:36px; height:36px; flex:0 0 auto; border-radius:9px;
+    border:1px solid rgba(122,211,255,.45); background:#151525 url('hero.png') 0 0 / 400% 100% no-repeat;
+  }
+  #heroInfo { flex:1; min-width:0; display:flex; flex-direction:column; gap:5px; }
+  #hudDetails {
+    display:flex; gap:6px; width:min(100%, 920px); font-size:11px; line-height:1.35;
+    overflow-x:auto; overscroll-behavior-x:contain; pointer-events:auto; touch-action:pan-x;
+    padding-bottom:2px; scrollbar-width:thin; scrollbar-color:rgba(122,211,255,.45) transparent;
+  }
+  #hudDetails::-webkit-scrollbar { height:4px; }
+  #hudDetails::-webkit-scrollbar-thumb { background:rgba(122,211,255,.45); border-radius:999px; }
+  .hudPanel {
+    background:rgba(12,12,24,.68); border:1px solid rgba(51,51,77,.82);
+    border-radius:8px; padding:6px 8px; min-width:250px; width:max-content; backdrop-filter: blur(4px);
+    flex:0 0 auto;
+  }
+  #hudStats { min-width:310px; }
+  #hudUpgrades { min-width:270px; }
+  #hudKills { min-width:330px; }
+  .hudPanel b { color:#dfefff; font-weight:700; }
+  .hudPanel span { display:block; color:#a6a6c6; }
+  .hudLine { white-space:nowrap; }
+  .hudChips { display:flex !important; flex-wrap:nowrap; gap:3px 5px; }
+  .hudChip {
+    display:inline-flex !important; align-items:center;
+    padding:1px 5px; border-radius:5px; background:rgba(255,255,255,.06);
+    color:#d6d6ec !important; white-space:nowrap;
+  }
+  .hudPanel .hudTitle { color:#7ad3ff; font-weight:700; margin-bottom:2px; }
+  @media (max-width: 620px) {
+    #hud { padding: 8px 10px; gap:5px; }
+    #topRow { gap:8px; font-size:12px; flex-wrap:wrap; }
+    #heroHud { width:calc(100% - 58px); }
+    #heroIcon { width:32px; height:32px; border-radius:8px; }
+    #hpText { min-width:46px; font-size:11px; }
+    #hudDetails { width:100%; gap:4px; font-size:10px; }
+    .hudLine { white-space:nowrap; }
+    #hudStats { min-width:270px; }
+    #hudUpgrades { min-width:245px; }
+    #hudKills { min-width:285px; }
+    .hudPanel { padding:5px 6px; }
+    .hudChips { gap:2px 3px; }
+    .hudChip { padding:0 3px; border-radius:4px; }
+  }
 
   /* Overlay screens */
   .overlay {
@@ -104,12 +156,22 @@
   <!-- HUD -->
   <div id="hud" class="hidden">
     <div class="bar-bg"><div id="xpFill" class="bar-fill" style="width:0%"></div></div>
-    <div id="topRow">
-      <span id="lvlTag">Lv 1</span>
-      <span id="timeTag">00:00</span>
-      <span id="killTag">击杀 0</span>
+    <div id="heroHud">
+      <div id="heroIcon"></div>
+      <div id="heroInfo">
+        <div id="topRow">
+          <span id="lvlTag">Lv 1</span>
+          <span id="timeTag">00:00</span>
+          <span id="killTag">击杀 0</span>
+        </div>
+        <div id="hpRow"><span class="hudLabel">HP</span><div id="hpBg"><div id="hpFill" style="width:100%"></div></div><span id="hpText">120/120</span></div>
+      </div>
     </div>
-    <div id="hpRow"><span class="hudLabel">HP</span><div id="hpBg"><div id="hpFill" style="width:100%"></div></div></div>
+    <div id="hudDetails">
+      <div class="hudPanel" id="hudStats"><span class="hudTitle">属性</span><span>速度 3.0 · 伤害 100%</span></div>
+      <div class="hudPanel" id="hudUpgrades"><span class="hudTitle">奖励</span><span>暂无升级奖励</span></div>
+      <div class="hudPanel" id="hudKills"><span class="hudTitle">击杀统计</span><span>等级 暂无</span><span>稀有度 暂无</span></div>
+    </div>
   </div>
 
   <!-- Start screen -->
@@ -189,6 +251,7 @@ const BULLET_HIDE_MARGIN=180;
 const DESPAWN_MARGIN=520;
 const MAX_ENEMIES=240;
 const MAX_BULLETS=140;
+const MAX_ENEMY_SHOTS=160;
 const MAX_ORBS=180;
 const MAX_PARTICLES=260;
 const MAX_DAMAGE_TEXTS=90;
@@ -221,15 +284,112 @@ function trimEnemies(g){
   if(g.enemies.length>MAX_ENEMIES) g.enemies.splice(0,g.enemies.length-MAX_ENEMIES);
 }
 
+function tileNoise(tx,ty,salt=0){
+  let n=Math.imul(tx,374761393)^Math.imul(ty,668265263)^Math.imul(salt+1,1442695041);
+  n=(n^(n>>>13))>>>0;
+  n=Math.imul(n,1274126177)>>>0;
+  return ((n^(n>>>16))>>>0)/4294967295;
+}
+
+function drawDungeonFloor(g){
+  const tile=64;
+  const left=g.cam.x-W/2, top=g.cam.y-H/2;
+  const right=g.cam.x+W/2, bottom=g.cam.y+H/2;
+  const startX=Math.floor(left/tile)*tile;
+  const startY=Math.floor(top/tile)*tile;
+  const palettes=[
+    ['#10131c','#171a25','#202432'],
+    ['#12151b','#191d25','#252a34'],
+    ['#14141f','#1b1b29','#29283a'],
+    ['#111719','#192322','#24332d'],
+  ];
+
+  ctx.fillStyle='#0c0d14';
+  ctx.fillRect(left,top,W,H);
+
+  for(let y=startY;y<bottom+tile;y+=tile){
+    const ty=Math.floor(y/tile);
+    for(let x=startX;x<right+tile;x+=tile){
+      const tx=Math.floor(x/tile);
+      const n=tileNoise(tx,ty,0);
+      const p=palettes[Math.floor(n*palettes.length)];
+      const grad=ctx.createLinearGradient(x,y,x+tile,y+tile);
+      grad.addColorStop(0,p[0]);
+      grad.addColorStop(0.56,p[1]);
+      grad.addColorStop(1,p[2]);
+      ctx.fillStyle=grad;
+      ctx.fillRect(x+1,y+1,tile-2,tile-2);
+
+      ctx.strokeStyle=n>0.82?'rgba(122,211,255,0.10)':'rgba(0,0,0,0.26)';
+      ctx.lineWidth=1;
+      ctx.strokeRect(x+0.5,y+0.5,tile-1,tile-1);
+
+      if(tileNoise(tx,ty,1)>0.58){
+        ctx.strokeStyle='rgba(0,0,0,0.34)';
+        ctx.lineWidth=1.4;
+        ctx.beginPath();
+        const sx=x+10+tileNoise(tx,ty,2)*26;
+        const sy=y+12+tileNoise(tx,ty,3)*28;
+        ctx.moveTo(sx,sy);
+        ctx.lineTo(sx+10+tileNoise(tx,ty,4)*18,sy+4+tileNoise(tx,ty,5)*18);
+        if(tileNoise(tx,ty,6)>0.55) ctx.lineTo(sx+24,sy+18+tileNoise(tx,ty,7)*18);
+        ctx.stroke();
+      }
+
+      if(tileNoise(tx,ty,8)>0.72){
+        ctx.fillStyle='rgba(112,156,111,0.28)';
+        ctx.beginPath();
+        ctx.ellipse(x+12+tileNoise(tx,ty,9)*40,y+14+tileNoise(tx,ty,10)*34,10+tileNoise(tx,ty,11)*13,4+tileNoise(tx,ty,12)*8,tileNoise(tx,ty,13)*Math.PI,0,7);
+        ctx.fill();
+      }
+
+      if(tileNoise(tx,ty,14)>0.84){
+        ctx.fillStyle='rgba(190,183,145,0.22)';
+        for(let i=0;i<3;i++){
+          const rx=x+8+tileNoise(tx,ty,20+i)*48;
+          const ry=y+8+tileNoise(tx,ty,30+i)*48;
+          ctx.beginPath(); ctx.arc(rx,ry,1.4+tileNoise(tx,ty,40+i)*2.1,0,7); ctx.fill();
+        }
+      }
+
+      if(tileNoise(tx,ty,50)>0.965){
+        ctx.save();
+        ctx.translate(x+tile/2,y+tile/2);
+        ctx.rotate(tileNoise(tx,ty,51)*Math.PI);
+        ctx.strokeStyle='rgba(122,211,255,0.24)';
+        ctx.shadowColor='rgba(122,211,255,0.35)';
+        ctx.shadowBlur=8;
+        ctx.lineWidth=1.2;
+        ctx.beginPath();
+        ctx.moveTo(-12,0); ctx.lineTo(12,0);
+        ctx.moveTo(0,-12); ctx.lineTo(0,12);
+        ctx.arc(0,0,10,0,7);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+  }
+
+  const big=tile*4;
+  const bx=Math.floor(left/big)*big;
+  const by=Math.floor(top/big)*big;
+  ctx.strokeStyle='rgba(0,0,0,0.24)';
+  ctx.lineWidth=3;
+  ctx.beginPath();
+  for(let x=bx;x<right+big;x+=big){ctx.moveTo(x,top);ctx.lineTo(x,bottom);}
+  for(let y=by;y<bottom+big;y+=big){ctx.moveTo(left,y);ctx.lineTo(right,y);}
+  ctx.stroke();
+}
+
 // ---------- balance ----------
 const ENEMY_LEVEL_RULES=[
-  {lvl:1,  spawnInterval:106, burst:1, hpMul:1.00, speedMul:0.98, dmgMul:0.95, xpMul:1.00, runnerChance:0.00, bruteChance:0.00},
-  {lvl:3,  spawnInterval:98,  burst:1, hpMul:1.18, speedMul:1.04, dmgMul:1.08, xpMul:1.05, runnerChance:0.10, bruteChance:0.00},
-  {lvl:5,  spawnInterval:90,  burst:1, hpMul:1.40, speedMul:1.10, dmgMul:1.22, xpMul:1.10, runnerChance:0.16, bruteChance:0.04},
-  {lvl:7,  spawnInterval:82,  burst:2, hpMul:1.68, speedMul:1.16, dmgMul:1.38, xpMul:1.16, runnerChance:0.21, bruteChance:0.07},
-  {lvl:10, spawnInterval:74,  burst:2, hpMul:2.04, speedMul:1.22, dmgMul:1.56, xpMul:1.24, runnerChance:0.26, bruteChance:0.11},
-  {lvl:13, spawnInterval:66,  burst:2, hpMul:2.48, speedMul:1.28, dmgMul:1.76, xpMul:1.32, runnerChance:0.30, bruteChance:0.14},
-  {lvl:16, spawnInterval:58,  burst:3, hpMul:3.02, speedMul:1.34, dmgMul:2.00, xpMul:1.42, runnerChance:0.34, bruteChance:0.18},
+  {lvl:1,  spawnInterval:77, burst:1, hpMul:1.34, speedMul:1.25, dmgMul:1.25, xpMul:1.00, runnerChance:0.02, bruteChance:0.00},
+  {lvl:3,  spawnInterval:70, burst:1, hpMul:1.58, speedMul:1.32, dmgMul:1.42, xpMul:1.05, runnerChance:0.12, bruteChance:0.01},
+  {lvl:5,  spawnInterval:64, burst:1, hpMul:1.90, speedMul:1.39, dmgMul:1.61, xpMul:1.10, runnerChance:0.18, bruteChance:0.05},
+  {lvl:7,  spawnInterval:58, burst:2, hpMul:2.28, speedMul:1.48, dmgMul:1.82, xpMul:1.16, runnerChance:0.23, bruteChance:0.08},
+  {lvl:10, spawnInterval:51, burst:2, hpMul:2.78, speedMul:1.56, dmgMul:2.06, xpMul:1.24, runnerChance:0.28, bruteChance:0.12},
+  {lvl:13, spawnInterval:46, burst:2, hpMul:3.38, speedMul:1.64, dmgMul:2.33, xpMul:1.32, runnerChance:0.32, bruteChance:0.16},
+  {lvl:16, spawnInterval:40, burst:3, hpMul:4.14, speedMul:1.73, dmgMul:2.64, xpMul:1.42, runnerChance:0.36, bruteChance:0.20},
 ];
 const ENEMY_SIZE_TIERS=[
   {id:'small',  rarity:'微型', mark:'·', scale:0.82, hpMul:0.72, speedMul:1.14, dmgMul:0.78, xpMul:1.00, lvlBonus:0, text:'#9eea8d', ring:'rgba(158,234,141,0.62)', aura:null},
@@ -238,12 +398,33 @@ const ENEMY_SIZE_TIERS=[
   {id:'elite',  rarity:'精英', mark:'★', scale:1.45, hpMul:2.25, speedMul:1.04, dmgMul:1.62, xpMul:2.50, lvlBonus:2, text:'#ff8a96', ring:'rgba(255,107,138,0.86)', aura:'rgba(255,107,138,0.34)'},
   {id:'giant',  rarity:'首领', mark:'✦', scale:1.72, hpMul:3.50, speedMul:0.86, dmgMul:2.20, xpMul:4.00, lvlBonus:4, text:'#be7aff', ring:'rgba(190,122,255,0.9)', aura:'rgba(190,122,255,0.38)'},
 ];
+const ENEMY_SKILL_POWER={small:0.75,normal:1.00,large:1.28,elite:1.72,giant:2.35};
+const DEBUFF_NAMES={
+  speed:'迟缓',damage:'乏力',pickup:'磁场紊乱',xp:'学识封锁',luck:'厄运',
+  armor:'破甲',regen:'枯萎',crit:'失准'
+};
+const TEMP_DEBUFFS={
+  orb:[
+    {id:'speed',mul:0.82,life:240},{id:'xp',mul:0.82,life:300},{id:'luck',flat:-0.08,life:330}
+  ],
+  blade:[
+    {id:'damage',mul:0.84,life:270},{id:'armor',flat:-2,life:300},{id:'crit',flat:-0.08,life:300}
+  ],
+  nova:[
+    {id:'pickup',mul:0.72,life:330},{id:'regen',mul:0.45,life:360},{id:'damage',mul:0.86,life:300}
+  ],
+  dash:[
+    {id:'speed',mul:0.76,life:210},{id:'pickup',mul:0.80,life:260},{id:'crit',flat:-0.06,life:240}
+  ]
+};
 const BOLT_TYPES={
-  arcane:{name:'奥术', col:'#7ad3ff', core:'#e6f6ff', glow:'rgba(122,211,255,0.78)', dmgMul:1.00, speedMul:1.00, sizeMul:1.00, lifeMul:1.00, trail:9},
-  flame:{name:'烈焰', col:'#ff8a3d', core:'#fff0b8', glow:'rgba(255,138,61,0.78)', dmgMul:1.12, speedMul:0.94, sizeMul:1.08, lifeMul:0.96, trail:11, effect:'splash'},
-  frost:{name:'霜冻', col:'#8ff4ff', core:'#f1ffff', glow:'rgba(143,244,255,0.78)', dmgMul:0.90, speedMul:0.92, sizeMul:0.96, lifeMul:1.08, trail:10, effect:'slow'},
-  thunder:{name:'雷光', col:'#ffe66b', core:'#fffbd0', glow:'rgba(255,230,107,0.84)', dmgMul:0.88, speedMul:1.24, sizeMul:0.88, lifeMul:0.94, pierceBonus:1, trail:14, effect:'chain'},
-  void:{name:'虚空', col:'#b477ff', core:'#f0d8ff', glow:'rgba(180,119,255,0.84)', dmgMul:1.25, speedMul:0.82, sizeMul:1.22, lifeMul:1.16, trail:12, kmag:6},
+  arcane:{name:'奥术', shape:'orb', col:'#7ad3ff', core:'#e6f6ff', glow:'rgba(122,211,255,0.78)', dmgMul:1.00, speedMul:1.00, sizeMul:1.00, lifeMul:1.00, trail:9, effect:'vulnerable'},
+  flame:{name:'烈焰', shape:'comet', col:'#ff8a3d', core:'#fff0b8', glow:'rgba(255,138,61,0.78)', dmgMul:1.12, speedMul:0.94, sizeMul:1.08, lifeMul:0.96, trail:11, effect:'splash'},
+  frost:{name:'霜冻', shape:'shard', col:'#8ff4ff', core:'#f1ffff', glow:'rgba(143,244,255,0.78)', dmgMul:0.90, speedMul:0.92, sizeMul:0.96, lifeMul:1.08, trail:10, effect:'slow'},
+  thunder:{name:'雷光', shape:'bolt', col:'#ffe66b', core:'#fffbd0', glow:'rgba(255,230,107,0.84)', dmgMul:0.88, speedMul:1.24, sizeMul:0.88, lifeMul:0.94, pierceBonus:1, trail:14, effect:'chain'},
+  void:{name:'虚空', shape:'diamond', col:'#b477ff', core:'#f0d8ff', glow:'rgba(180,119,255,0.84)', dmgMul:1.25, speedMul:0.82, sizeMul:1.22, lifeMul:1.16, trail:12, effect:'gravity', kmag:6},
+  venom:{name:'毒棘', shape:'needle', col:'#9eea8d', core:'#ecffd8', glow:'rgba(158,234,141,0.78)', dmgMul:0.76, speedMul:1.12, sizeMul:0.82, lifeMul:1.08, pierceBonus:1, trail:10, effect:'poison'},
+  wind:{name:'风刃', shape:'crescent', col:'#d8f2ff', core:'#ffffff', glow:'rgba(188,230,255,0.78)', dmgMul:0.94, speedMul:1.18, sizeMul:1.02, lifeMul:0.92, pierceBonus:1, trail:12, effect:'gust', kmag:7},
 };
 
 function xpForNextLevel(level){
@@ -257,11 +438,11 @@ function enemyLevelConfig(level){
   for(const r of ENEMY_LEVEL_RULES){ if(level>=r.lvl) rule=r; else break; }
   const over=Math.max(0, level-16);
   return {
-    spawnInterval:Math.max(42, rule.spawnInterval-over*3),
+    spawnInterval:Math.max(27, rule.spawnInterval-over*3),
     burst:rule.burst+Math.floor(over/4),
-    hpMul:rule.hpMul+over*0.12,
-    speedMul:rule.speedMul+over*0.018,
-    dmgMul:rule.dmgMul+over*0.10,
+    hpMul:rule.hpMul+over*0.17,
+    speedMul:rule.speedMul+over*0.024,
+    dmgMul:rule.dmgMul+over*0.14,
     xpMul:rule.xpMul+over*0.025,
     runnerChance:clamp(rule.runnerChance+over*0.012,0,0.36),
     bruteChance:clamp(rule.bruteChance+over*0.010,0,0.24),
@@ -286,6 +467,21 @@ function enemySizeTier(level){
   return ENEMY_SIZE_TIERS[1];
 }
 
+function enemySkillPower(e){
+  return ENEMY_SKILL_POWER[e.tier]||1;
+}
+
+function rareEnough(e,minTier){
+  const rank={small:0,normal:1,large:2,elite:3,giant:4};
+  return (rank[e.tier]||0)>=(rank[minTier]||0);
+}
+
+function enemySkillLabel(e){
+  if(!e.skills||!e.skills.length) return '';
+  const names={orb:'魔球',blade:'刃环',dash:'突袭',nova:'震荡'};
+  return e.skills.map(s=>names[s.id]||s.id).join('+');
+}
+
 // ---------- game state ----------
 let game=null;
 function newGame(){
@@ -294,9 +490,11 @@ function newGame(){
     player:{ x:0,y:0, r:13, speed:3.0, hp:120, maxhp:120, xp:0, lvl:1, next:xpForNextLevel(1), kills:0,
              ifr:0, face:1, anim:0, frame:0, moving:false },
     cam:{x:0,y:0},
-    enemies:[], bullets:[], orbs:[], particles:[], damageTexts:[],
+    enemies:[], bullets:[], enemyShots:[], orbs:[], particles:[], damageTexts:[], debuffs:[],
     moveTarget:null,
     spawnTimer:0,
+    killStats:{byLevel:{}, byRarity:{}},
+    upgradeLog:[],
     // weapons / stats
     weapons:{
       bolt:{ lvl:1, cd:0, rate:34, dmg:22, count:1, speed:6.5, size:6, life:90, pierce:0,
@@ -363,9 +561,9 @@ function spawnEnemy(cfg){
   if(roll<cfg.bruteChance) type='brute';
   else if(roll<cfg.bruteChance+cfg.runnerChance) type='runner';
   const base={
-    grub:{r:12,hp:22,speed:[0.9,1.2],dmg:6,xp:1,color:'#7ad36b'},
-    runner:{r:10,hp:15,speed:[1.9,2.3],dmg:5,xp:1,color:'#ffd86b'},
-    brute:{r:20,hp:80,speed:[0.75,0.95],dmg:12,xp:4,color:'#ff6b8a'},
+    grub:{r:12,hp:30,speed:[1.2,1.58],dmg:8,xp:1,color:'#7ad36b'},
+    runner:{r:10,hp:22,speed:[2.5,2.98],dmg:7,xp:1,color:'#ffd86b'},
+    brute:{r:20,hp:110,speed:[1.03,1.3],dmg:17,xp:4,color:'#ff6b8a'},
   }[type];
   const tier=enemySizeTier(p.lvl);
   const hp=Math.round(base.hp*cfg.hpMul*tier.hpMul);
@@ -381,8 +579,44 @@ function spawnEnemy(cfg){
   e.skin=type==='runner'?'runner':type==='grub' && Math.random()<0.5?'runner':'grub';
   e.disp=(e.skin==='runner'?68:73)*e.scale;
   e.labelOffset=Math.max(e.r+22, e.disp*0.44+14);
+  e.skills=enemySkillSet(e,p);
   e.dropReward=rollEnemyDropReward(e,p.lvl);
   g.enemies.push(e);
+}
+
+function enemySkillSet(e,p){
+  const power=enemySkillPower(e);
+  const hasPlayerOrbit=game.weapons.orbit.count>0;
+  const hasPlayerNova=game.weapons.nova.lvl>0;
+  const richBolts=game.weapons.bolt.count>=2||game.weapons.bolt.types.length>=4;
+  const skills=[];
+  if(e.type==='grub'){
+    const chance=(rareEnough(e,'large')?0.62:0.16)+(richBolts?0.18:0)+p.lvl*0.012;
+    if(Math.random()<clamp(chance,0,0.92)){
+      skills.push({id:'orb',cd:randi(45,115),rate:Math.max(48,Math.round(126-power*16-e.lvl*1.8)),power});
+    }
+  } else if(e.type==='runner'){
+    const dashChance=(rareEnough(e,'large')?0.70:0.22)+(p.speed>3.4?0.15:0)+p.lvl*0.01;
+    if(Math.random()<clamp(dashChance,0,0.9)){
+      skills.push({id:'dash',cd:randi(60,130),rate:Math.max(62,Math.round(150-power*18-e.lvl*1.4)),power});
+    }
+    if(rareEnough(e,'elite')&&Math.random()<0.48){
+      skills.push({id:'orb',cd:randi(70,145),rate:Math.max(58,Math.round(148-power*14-e.lvl)),power:power*0.82});
+    }
+  } else if(e.type==='brute'){
+    const bladeChance=(rareEnough(e,'large')?0.58:0.18)+(hasPlayerOrbit?0.26:0);
+    if(Math.random()<clamp(bladeChance,0,0.94)){
+      skills.push({id:'blade',ang:rand(0,7),cd:0,count:rareEnough(e,'elite')?3:2,radius:e.r+24+power*8,size:5+power*2.2,dmg:Math.max(2,Math.round(e.dmg*(0.32+power*0.08))),spin:0.034+power*0.008,power});
+    }
+    const novaChance=(rareEnough(e,'elite')?0.42:0)+(hasPlayerNova?0.20:0);
+    if(Math.random()<clamp(novaChance,0,0.78)){
+      skills.push({id:'nova',cd:randi(80,150),rate:Math.max(90,Math.round(190-power*24-e.lvl*1.5)),radius:e.r+56+power*12,dmg:Math.max(3,Math.round(e.dmg*(0.58+power*0.1))),power});
+    }
+  }
+  if(rareEnough(e,'giant')&&!skills.some(s=>s.id==='orb')){
+    skills.push({id:'orb',cd:randi(40,100),rate:Math.max(44,Math.round(110-power*12-e.lvl)),power:power*1.05});
+  }
+  return skills;
 }
 
 // ---------- weapons fire ----------
@@ -401,20 +635,182 @@ function fireBolt(){
     const a=baseAng+spread;
     const typeId=w.types[w.seq++%w.types.length]||'arcane';
     const type=BOLT_TYPES[typeId]||BOLT_TYPES.arcane;
-    const crit=Math.random()<g.stats.crit;
+    const crit=Math.random()<critChance();
     const speed=w.speed*type.speedMul;
-    const dmg=w.dmg*g.stats.dmgMul*type.dmgMul*(crit?g.stats.critMul:1);
+    const dmg=w.dmg*damageMul()*type.dmgMul*(crit?g.stats.critMul:1);
     g.bullets.push({x:p.x,y:p.y,px:p.x,py:p.y,vx:Math.cos(a)*speed,vy:Math.sin(a)*speed,
       r:w.size*type.sizeMul,dmg,life:Math.round(w.life*type.lifeMul),
       pierce:w.pierce+(type.pierceBonus||0),crit,type:typeId,col:type.col,core:type.core,glow:type.glow,
-      effect:type.effect,trail:type.trail,kmag:type.kmag||4});
+      shape:type.shape||'orb',effect:type.effect,trail:type.trail,kmag:type.kmag||4,ang:a});
   }
 }
 function p0(){return game.player;}
 
+function tempMul(id){
+  if(!game) return 1;
+  let mul=1;
+  for(const d of game.debuffs){
+    if(d.id===id && d.mul!=null) mul*=d.mul;
+  }
+  return mul;
+}
+function tempFlat(id){
+  if(!game) return 0;
+  let flat=0;
+  for(const d of game.debuffs){
+    if(d.id===id && d.flat!=null) flat+=d.flat;
+  }
+  return flat;
+}
+function moveSpeed(){ return game.player.speed*tempMul('speed'); }
+function damageMul(){ return game.stats.dmgMul*tempMul('damage'); }
+function pickupRange(){ return Math.max(30,game.stats.pickup*tempMul('pickup')); }
+function xpMul(){ return Math.max(0.35,game.stats.xpMul*tempMul('xp')); }
+function luckValue(){ return Math.max(0,game.stats.luck+tempFlat('luck')); }
+function critChance(){ return clamp(game.stats.crit+tempFlat('crit'),0,0.75); }
+function armorValue(){ return Math.max(0,game.stats.armor+tempFlat('armor')); }
+function regenValue(){ return Math.max(0,game.stats.regen*tempMul('regen')); }
+
+function addTempDebuff(seed,power){
+  const pool=TEMP_DEBUFFS[seed]||TEMP_DEBUFFS.orb;
+  const d=pool[randi(0,pool.length)];
+  const existing=game.debuffs.find(x=>x.id===d.id);
+  const life=Math.round(d.life*(0.92+(power||1)*0.12));
+  if(existing){
+    existing.life=Math.max(existing.life,life);
+    existing.max=Math.max(existing.max,life);
+    if(d.mul!=null) existing.mul=Math.min(existing.mul,d.mul);
+    if(d.flat!=null) existing.flat=Math.min(existing.flat||0,d.flat);
+  } else {
+    game.debuffs.push({id:d.id,name:DEBUFF_NAMES[d.id]||d.id,life,max:life,mul:d.mul,flat:d.flat});
+  }
+  const p=game.player;
+  game.damageTexts.push({x:p.x,y:p.y-p.r-38,txt:'短暂 '+(DEBUFF_NAMES[d.id]||d.id),life:70,max:70,vy:-0.45,col:'#b477ff',stroke:'#1b082e'});
+}
+
+function permanentTargets(){
+  const g=game,p=g.player, out=[];
+  if(p.speed>3.02) out.push({id:'speed',name:'移速',apply:()=>{p.speed=Math.max(3,p.speed*0.96);}});
+  if(g.stats.dmgMul>1.01) out.push({id:'damage',name:'伤害',apply:()=>{g.stats.dmgMul=Math.max(1,g.stats.dmgMul*0.96);}});
+  if(g.stats.pickup>60) out.push({id:'pickup',name:'拾取',apply:()=>{g.stats.pickup=Math.max(60,g.stats.pickup-12);}});
+  if(g.stats.xpMul>1.01) out.push({id:'xp',name:'经验',apply:()=>{g.stats.xpMul=Math.max(1,g.stats.xpMul*0.96);}});
+  if(g.stats.luck>0) out.push({id:'luck',name:'幸运',apply:()=>{g.stats.luck=Math.max(0,g.stats.luck-0.03);}});
+  if(g.stats.crit>0.051) out.push({id:'crit',name:'暴击',apply:()=>{g.stats.crit=Math.max(0.05,g.stats.crit-0.02);}});
+  if(g.stats.armor>0) out.push({id:'armor',name:'护甲',apply:()=>{g.stats.armor=Math.max(0,g.stats.armor-1);}});
+  if(g.stats.regen>0) out.push({id:'regen',name:'回复',apply:()=>{g.stats.regen=Math.max(0,g.stats.regen-0.35);}});
+  if(p.maxhp>120) out.push({id:'maxhp',name:'生命上限',apply:()=>{p.maxhp=Math.max(120,p.maxhp-5);p.hp=Math.min(p.hp,p.maxhp);}});
+  return out;
+}
+
+function addPermanentDebuff(seed){
+  const targets=permanentTargets();
+  if(!targets.length) return false;
+  const t=targets[randi(0,targets.length)];
+  t.apply();
+  const p=game.player;
+  game.damageTexts.push({x:p.x,y:p.y-p.r-50,txt:'永久削弱 '+t.name,life:95,max:95,vy:-0.36,col:'#ff8a96',stroke:'#300810'});
+  game.upgradeLog.push({name:'被削弱：'+t.name,source:'curse'});
+  if(game.upgradeLog.length>8) game.upgradeLog.shift();
+  return true;
+}
+
+function trySkillDebuff(kind,power){
+  const tempChance=clamp(({orb:0.42,blade:0.52,nova:0.60,dash:0.46}[kind]||0.42)+(power||1)*0.035,0,0.82);
+  const permChance=clamp(({orb:0.035,blade:0.045,nova:0.055,dash:0.030}[kind]||0.035)+(power||1)*0.006,0,0.095);
+  if(Math.random()<tempChance) addTempDebuff(kind,power);
+  if(Math.random()<permChance) addPermanentDebuff(kind);
+}
+
+function updateDebuffs(){
+  for(const d of game.debuffs) d.life--;
+  game.debuffs=game.debuffs.filter(d=>d.life>0);
+}
+
+function damagePlayer(amount, sx, sy, skillKind, power){
+  const g=game,p=g.player;
+  if(p.ifr>0) return false;
+  const taken=Math.max(1,Math.round(amount)-armorValue());
+  p.hp-=taken; p.ifr=42; g.flash=8;
+  if(skillKind) trySkillDebuff(skillKind,power||1);
+  if(g.stats.thorns>0 && sx!=null && sy!=null){
+    let target=null,best=44;
+    for(const e of g.enemies){
+      if(e.dead) continue;
+      const d=dist(sx,sy,e.x,e.y);
+      if(d<best){best=d;target=e;}
+    }
+    if(target) hitEnemy(target,g.stats.thorns,p.x-target.x,p.y-target.y,4);
+  }
+  for(let i=0;i<6;i++)g.particles.push({x:p.x,y:p.y,vx:rand(-3,3),vy:rand(-3,3),life:16,max:16,col:'#ff4d5e',r:3});
+  if(p.hp<=0){ p.hp=0; gameOver(); }
+  return true;
+}
+
+function fireEnemyOrb(e,skill){
+  const g=game,p=g.player;
+  const base=Math.atan2(p.y-e.y,p.x-e.x);
+  const power=skill.power||enemySkillPower(e);
+  const count=rareEnough(e,'elite')?3:rareEnough(e,'large')?2:1;
+  const spread=count===1?0:0.22;
+  for(let i=0;i<count;i++){
+    const a=base+(i-(count-1)/2)*spread+rand(-0.06,0.06);
+    const speed=2.25+power*0.45+e.lvl*0.025;
+    const r=4.6+power*1.25;
+    g.enemyShots.push({x:e.x,y:e.y,px:e.x,py:e.y,vx:Math.cos(a)*speed,vy:Math.sin(a)*speed,
+      r,life:150,dmg:Math.max(2,Math.round(e.dmg*(0.42+power*0.08))),col:e.rarityColor||'#ff8a96',glow:e.ring||'rgba(255,138,150,0.7)',shape:'orb',debuff:'orb',power});
+  }
+}
+
+function pulseEnemyNova(e,skill){
+  const g=game,p=g.player;
+  const r=skill.radius;
+  g.particles.push({x:e.x,y:e.y,vx:0,vy:0,life:24,max:24,col:e.rarityColor||'#ff8a96',r:r*0.28,ring:true});
+  if(dist(e.x,e.y,p.x,p.y)<r+p.r) damagePlayer(skill.dmg,e.x,e.y,'nova',skill.power);
+}
+
+function updateEnemySkills(e){
+  if(!e.skills||e.hidden) return;
+  const p=game.player;
+  for(const s of e.skills){
+    if(s.id==='orb'){
+      s.cd--;
+      if(s.cd<=0 && dist(e.x,e.y,p.x,p.y)<520){
+        fireEnemyOrb(e,s);
+        s.cd=s.rate+randi(-12,18);
+      }
+    } else if(s.id==='dash'){
+      s.cd--;
+      if(s.cd<=0 && dist(e.x,e.y,p.x,p.y)<360){
+        const a=Math.atan2(p.y-e.y,p.x-e.x);
+        const force=8+(s.power||1)*3.2;
+        e.kb.x+=Math.cos(a)*force;
+        e.kb.y+=Math.sin(a)*force;
+        e.dashGlow=22;
+        s.cd=s.rate+randi(-16,24);
+      }
+    } else if(s.id==='blade'){
+      s.ang+=s.spin;
+      for(let i=0;i<s.count;i++){
+        const a=s.ang+i/s.count*Math.PI*2;
+        const bx=e.x+Math.cos(a)*s.radius, by=e.y+Math.sin(a)*s.radius;
+        if(dist(bx,by,p.x,p.y)<p.r+s.size) damagePlayer(s.dmg,bx,by,'blade',s.power);
+      }
+    } else if(s.id==='nova'){
+      s.cd--;
+      if(s.cd<=0 && dist(e.x,e.y,p.x,p.y)<s.radius+150){
+        pulseEnemyNova(e,s);
+        s.cd=s.rate+randi(-20,28);
+      }
+    }
+  }
+}
+
 function applyBoltEffect(e,b){
   const g=game;
-  if(b.effect==='slow'){
+  if(b.effect==='vulnerable'){
+    e.vulnerable=Math.max(e.vulnerable||0,90);
+    for(let i=0;i<4;i++)g.particles.push({x:e.x,y:e.y,vx:rand(-1.4,1.4),vy:rand(-1.4,1.4),life:18,max:18,col:b.col,r:3});
+  } else if(b.effect==='slow'){
     e.slow=Math.max(e.slow||0,54);
     g.particles.push({x:e.x,y:e.y,vx:rand(-1.2,1.2),vy:rand(-1.2,1.2),life:22,max:22,col:b.col,r:4});
   } else if(b.effect==='splash'){
@@ -434,6 +830,29 @@ function applyBoltEffect(e,b){
       g.particles.push({x:(e.x+target.x)/2,y:(e.y+target.y)/2,vx:0,vy:0,life:12,max:12,col:b.col,r:5});
       hitEnemy(target,b.dmg*0.45,target.x-e.x,target.y-e.y,3);
     }
+  } else if(b.effect==='gravity'){
+    for(let i=0;i<10;i++)g.particles.push({x:e.x,y:e.y,vx:rand(-2.2,2.2),vy:rand(-2.2,2.2),life:18,max:18,col:b.col,r:3});
+    for(const other of g.enemies){
+      if(other===e||other.dead||other.hidden) continue;
+      const d=dist(e.x,e.y,other.x,other.y);
+      if(d<78+other.r){
+        const dx=e.x-other.x, dy=e.y-other.y, m=Math.hypot(dx,dy)||1;
+        other.kb.x+=dx/m*2.2; other.kb.y+=dy/m*2.2;
+        hitEnemy(other,b.dmg*0.18,dx,dy,1.5);
+      }
+    }
+  } else if(b.effect==='poison'){
+    e.poisonLife=Math.max(e.poisonLife||0,150);
+    e.poisonDmg=Math.max(e.poisonDmg||0,b.dmg*0.18);
+    for(let i=0;i<5;i++)g.particles.push({x:e.x,y:e.y,vx:rand(-1.5,1.5),vy:rand(-1.5,1.5),life:24,max:24,col:b.col,r:3});
+  } else if(b.effect==='gust'){
+    for(let i=0;i<6;i++)g.particles.push({x:e.x,y:e.y,vx:rand(-2.8,2.8),vy:rand(-2.8,2.8),life:14,max:14,col:b.col,r:2.5});
+    for(const other of g.enemies){
+      if(other===e||other.dead||other.hidden) continue;
+      if(dist(e.x,e.y,other.x,other.y)<54+other.r){
+        hitEnemy(other,b.dmg*0.22,other.x-e.x,other.y-e.y,5);
+      }
+    }
   }
 }
 
@@ -442,7 +861,7 @@ function fireNova(){
   for(const e of g.enemies){
     if(e.hidden) continue;
     if(dist(p.x,p.y,e.x,e.y)<w.radius){
-      hitEnemy(e, w.dmg*g.stats.dmgMul, e.x-p.x, e.y-p.y, 6);
+      hitEnemy(e, w.dmg*damageMul(), e.x-p.x, e.y-p.y, 6);
     }
   }
   // ring particles
@@ -451,6 +870,7 @@ function fireNova(){
 }
 
 function hitEnemy(e,dmg,kx,ky,kmag){
+  if(e.vulnerable>0) dmg*=1.12;
   e.hp-=dmg;
   const m=Math.hypot(kx,ky)||1;
   e.kb.x+=kx/m*(kmag||3); e.kb.y+=ky/m*(kmag||3);
@@ -462,6 +882,8 @@ function hitEnemy(e,dmg,kx,ky,kmag){
 function killEnemy(e){
   e.dead=true;
   game.player.kills++;
+  game.killStats.byLevel[e.lvl]=(game.killStats.byLevel[e.lvl]||0)+1;
+  game.killStats.byRarity[e.rarity]=(game.killStats.byRarity[e.rarity]||0)+1;
   const xpStyle=xpOrbStyle(e.xp);
   game.orbs.push({type:'xp',x:e.x,y:e.y,xp:e.xp,r:xpStyle.r,col:xpStyle.col,core:xpStyle.core,glow:xpStyle.glow});
   if(e.dropReward){
@@ -475,6 +897,7 @@ function update(){
   const g=game; if(!g||!g.running||g.paused) return;
   g.t++;
   const p=g.player;
+  updateDebuffs();
 
   // movement input
   let mx=0,my=0;
@@ -487,7 +910,8 @@ function update(){
   if(ml===0 && g.moveTarget){
     const dx=g.moveTarget.x-p.x, dy=g.moveTarget.y-p.y;
     const targetDist=Math.hypot(dx,dy);
-    if(targetDist<=p.speed){
+    const spd=moveSpeed();
+    if(targetDist<=spd){
       p.x=g.moveTarget.x; p.y=g.moveTarget.y;
       g.moveTarget=null;
     } else {
@@ -496,7 +920,7 @@ function update(){
     }
   }
   if(ml>0){mx/=ml||1;my/=ml||1; if(ml<1&&touchActive){mx*=ml;my*=ml;}}
-  if(g.moveTarget || ml>0){ p.x+=mx*p.speed; p.y+=my*p.speed; }
+  if(g.moveTarget || ml>0){ const spd=moveSpeed(); p.x+=mx*spd; p.y+=my*spd; }
   // facing + walk animation
   p.moving=ml>0.05;
   if(mx<-0.05)p.face=1; else if(mx>0.05)p.face=-1;   // sprite faces this way by default
@@ -508,7 +932,8 @@ function update(){
   for(const e of g.enemies) e.hidden=!inViewport(e.x,e.y,e.r,SPRITE_HIDE_MARGIN);
 
   // regen
-  if(g.stats.regen>0){ g.stats.hpRegenT++; if(g.stats.hpRegenT>=60){g.stats.hpRegenT=0; p.hp=Math.min(p.maxhp,p.hp+g.stats.regen);} }
+  const regen=regenValue();
+  if(regen>0){ g.stats.hpRegenT++; if(g.stats.hpRegenT>=60){g.stats.hpRegenT=0; p.hp=Math.min(p.maxhp,p.hp+regen);} }
   if(p.ifr>0)p.ifr--;
 
   // spawning
@@ -543,6 +968,20 @@ function update(){
   g.bullets=g.bullets.filter(b=>b.life>0);
   trimOldest(g.bullets,MAX_BULLETS);
 
+  // hostile projectiles
+  for(const b of g.enemyShots){
+    b.px=b.x; b.py=b.y;
+    b.x+=b.vx; b.y+=b.vy; b.life--;
+    b.hidden=!inViewport(b.x,b.y,b.r,BULLET_HIDE_MARGIN);
+    if(b.hidden){ b.life=0; continue; }
+    if(dist(b.x,b.y,p.x,p.y)<p.r+b.r){
+      b.life=0;
+      damagePlayer(b.dmg,b.x,b.y,b.debuff,b.power);
+    }
+  }
+  g.enemyShots=g.enemyShots.filter(b=>b.life>0);
+  trimOldest(g.enemyShots,MAX_ENEMY_SHOTS);
+
   // orbit blades damage
   if(wo.count>0){
     for(let i=0;i<wo.count;i++){
@@ -551,7 +990,7 @@ function update(){
       for(const e of g.enemies){
         if(e.dead||e.hidden)continue;
         if(dist(ox,oy,e.x,e.y)<e.r+wo.size){
-          if(!e.obCd||e.obCd<=0){ hitEnemy(e,wo.dmg*g.stats.dmgMul,e.x-p.x,e.y-p.y,5); e.obCd=18; }
+          if(!e.obCd||e.obCd<=0){ hitEnemy(e,wo.dmg*damageMul(),e.x-p.x,e.y-p.y,5); e.obCd=18; }
         }
       }
     }
@@ -561,6 +1000,17 @@ function update(){
   for(const e of g.enemies){
     if(e.dead)continue;
     if(e.obCd>0)e.obCd--;
+    if(e.dashGlow>0)e.dashGlow--;
+    if(e.vulnerable>0)e.vulnerable--;
+    if(e.poisonLife>0){
+      e.poisonLife--;
+      e.poisonTick=(e.poisonTick||0)+1;
+      if(e.poisonTick>=24){
+        e.poisonTick=0;
+        hitEnemy(e,e.poisonDmg||2,0,0,1);
+        if(e.dead) continue;
+      }
+    }
     const slowMul=e.slow>0?0.58:1;
     if(e.slow>0)e.slow--;
     const a=Math.atan2(p.y-e.y,p.x-e.x);
@@ -570,13 +1020,10 @@ function update(){
     e.hidden=!inViewport(e.x,e.y,e.r,SPRITE_HIDE_MARGIN);
     if(!e.hidden) e.anim+=0.15;
     if(Math.cos(a)<-0.05)e.face=-1; else if(Math.cos(a)>0.05)e.face=1;
+    updateEnemySkills(e);
     // touch player
     if(p.ifr<=0 && dist(e.x,e.y,p.x,p.y)<e.r+p.r){
-      const taken=Math.max(1,e.dmg-g.stats.armor);
-      p.hp-=taken; p.ifr=42; g.flash=8;
-      if(g.stats.thorns>0) hitEnemy(e,g.stats.thorns,p.x-e.x,p.y-e.y,4);
-      for(let i=0;i<6;i++)g.particles.push({x:p.x,y:p.y,vx:rand(-3,3),vy:rand(-3,3),life:16,max:16,col:'#ff4d5e',r:3});
-      if(p.hp<=0){ p.hp=0; gameOver(); }
+      damagePlayer(e.dmg,e.x,e.y,e.dashGlow>0?'dash':null,enemySkillPower(e));
     }
   }
   g.enemies=g.enemies.filter(e=>!e.dead && nearPlayer(e));
@@ -586,12 +1033,13 @@ function update(){
   for(const o of g.orbs){
     o.hidden=!inViewport(o.x,o.y,o.r,SPRITE_HIDE_MARGIN);
     const d=dist(o.x,o.y,p.x,p.y);
-    if(d<g.stats.pickup){ const a=Math.atan2(p.y-o.y,p.x-o.x); const pull=clamp((g.stats.pickup-d)/g.stats.pickup,0,1)*6+1; o.x+=Math.cos(a)*pull; o.y+=Math.sin(a)*pull; }
+    const pickup=pickupRange();
+    if(d<pickup){ const a=Math.atan2(p.y-o.y,p.x-o.x); const pull=clamp((pickup-d)/pickup,0,1)*6+1; o.x+=Math.cos(a)*pull; o.y+=Math.sin(a)*pull; }
     if(d<p.r+o.r){ o.got=true;
       if(o.type==='upgrade'){
         applyUpgrade(upgradeById(o.upgradeId),'drop');
       } else {
-        const gain=Math.max(1,Math.round(o.xp*g.stats.xpMul));
+        const gain=Math.max(1,Math.round(o.xp*xpMul()));
         p.xp+=gain;
         g.damageTexts.push({x:p.x+p.face*24,y:p.y-p.r-8,txt:'exp+'+gain,life:34,max:34,vy:-0.55,col:'#7ad3ff'});
       }
@@ -623,6 +1071,11 @@ function levelUp(){
 }
 
 // ---------- upgrades ----------
+function learnBoltType(w,typeId,onRepeat){
+  if(!w.bolt.types.includes(typeId)) w.bolt.types.push(typeId);
+  else onRepeat();
+}
+
 function upgradePool(){
   const g=game,w=g.weapons,s=g.stats;
   const pool=[];
@@ -633,10 +1086,20 @@ function upgradePool(){
     apply:()=>{ if(w.bolt.pierce<4)w.bolt.pierce++; else w.bolt.dmg+=10; }});
   pool.push({id:'bolt_speed',ico:'💫',name:'星轨加速',dropWeight:7,desc:()=>'魔弹速度+12% 飞行时间+8%',lvl:'',apply:()=>{ w.bolt.speed*=1.12; w.bolt.life=Math.round(w.bolt.life*1.08); }});
   pool.push({id:'bolt_size',ico:'🟦',name:'奥术膨胀',dropWeight:7,desc:()=>'魔弹体积+15% 伤害+4',lvl:'',apply:()=>{ w.bolt.size=Math.min(13,w.bolt.size*1.15); w.bolt.dmg+=4; }});
+  pool.push({id:'bolt_arcane',ico:'🔷',name:'奥术刻印',dropWeight:6,desc:()=> w.bolt.types.includes('arcane')?'奥术易伤更频繁：魔弹冷却-8%':'解锁奥术魔弹：圆形，使命中目标易伤',
+    lvl:w.bolt.types.includes('arcane')?1:'',apply:()=>{ learnBoltType(w,'arcane',()=>{ w.bolt.rate=Math.max(12,Math.round(w.bolt.rate*0.92)); }); }});
+  pool.push({id:'bolt_flame',ico:'🔥',name:'烈焰魔弹',dropWeight:6,desc:()=> w.bolt.types.includes('flame')?'烈焰爆裂强化：魔弹伤害+8':'解锁烈焰魔弹：火滴形，范围爆裂',
+    lvl:w.bolt.types.includes('flame')?1:'',apply:()=>{ learnBoltType(w,'flame',()=>{ w.bolt.dmg+=8; }); }});
+  pool.push({id:'bolt_frost',ico:'❄️',name:'霜冻魔弹',dropWeight:6,desc:()=> w.bolt.types.includes('frost')?'霜冻穿透强化：魔弹穿透+1':'解锁霜冻魔弹：冰棱形，减速敌人',
+    lvl:w.bolt.types.includes('frost')?1:'',apply:()=>{ learnBoltType(w,'frost',()=>{ w.bolt.pierce++; }); }});
   pool.push({id:'bolt_thunder',ico:'⚡',name:'雷光魔弹',dropWeight:6,desc:()=> w.bolt.types.includes('thunder')?'雷光魔弹伤害+8':'解锁雷光魔弹：高速、穿透、连锁',
-    lvl:w.bolt.types.includes('thunder')?1:'',apply:()=>{ if(!w.bolt.types.includes('thunder'))w.bolt.types.push('thunder'); else w.bolt.dmg+=8; }});
+    lvl:w.bolt.types.includes('thunder')?1:'',apply:()=>{ learnBoltType(w,'thunder',()=>{ w.bolt.dmg+=8; }); }});
   pool.push({id:'bolt_void',ico:'🟣',name:'虚空魔弹',dropWeight:5,desc:()=> w.bolt.types.includes('void')?'虚空魔弹伤害+10':'解锁虚空魔弹：更大、更重、更强',
-    lvl:w.bolt.types.includes('void')?1:'',apply:()=>{ if(!w.bolt.types.includes('void'))w.bolt.types.push('void'); else w.bolt.dmg+=10; }});
+    lvl:w.bolt.types.includes('void')?1:'',apply:()=>{ learnBoltType(w,'void',()=>{ w.bolt.dmg+=10; }); }});
+  pool.push({id:'bolt_venom',ico:'☘️',name:'毒棘魔弹',dropWeight:5,desc:()=> w.bolt.types.includes('venom')?'毒棘魔弹更密集：魔弹数量/伤害提升':'解锁毒棘魔弹：针形，造成持续伤害',
+    lvl:w.bolt.types.includes('venom')?1:'',apply:()=>{ learnBoltType(w,'venom',()=>{ if(w.bolt.count<5)w.bolt.count++; else w.bolt.dmg+=7; }); }});
+  pool.push({id:'bolt_wind',ico:'🌙',name:'风刃魔弹',dropWeight:5,desc:()=> w.bolt.types.includes('wind')?'风刃魔弹更快：速度+10% 伤害+4':'解锁风刃魔弹：月牙形，切割并击退',
+    lvl:w.bolt.types.includes('wind')?1:'',apply:()=>{ learnBoltType(w,'wind',()=>{ w.bolt.speed*=1.1; w.bolt.dmg+=4; }); }});
   pool.push({id:'orbit_blade',ico:'🗡️',name:'环绕飞刃',dropWeight:10,desc:()=> w.orbit.count===0?'获得1把环绕飞刃':'增加1把飞刃 / 伤害+6',
     lvl:w.orbit.lvl,apply:()=>{ w.orbit.count++; w.orbit.dmg+=6; w.orbit.lvl++; }});
   pool.push({id:'orbit_area',ico:'⭕',name:'刃环扩张',dropWeight:6,desc:()=>'飞刃范围+18 体积+10%',lvl:'',apply:()=>{ w.orbit.radius+=18; w.orbit.size*=1.1; }});
@@ -653,13 +1116,15 @@ function upgradePool(){
   pool.push({id:'thorns',ico:'🌵',name:'荆棘反击',dropWeight:6,desc:()=>'受击时反伤+12',lvl:s.thorns,apply:()=>{ s.thorns+=12; }});
   pool.push({id:'crit',ico:'🎯',name:'弱点洞察',dropWeight:7,desc:()=>'暴击率+8% 暴击伤害+10%',lvl:'',apply:()=>{ s.crit=Math.min(0.65,s.crit+0.08); s.critMul+=0.1; }});
   pool.push({id:'xp_gain',ico:'📘',name:'学识汲取',dropWeight:7,desc:()=>'经验获取+15%',lvl:'',apply:()=>{ s.xpMul*=1.15; }});
-  pool.push({id:'luck',ico:'🍀',name:'幸运星芒',dropWeight:5,desc:()=>'怪物掉落强化奖励概率+15%',lvl:'',apply:()=>{ s.luck+=0.15; }});
+  pool.push({id:'luck',ico:'🍀',name:'幸运星芒',dropWeight:5,desc:()=>'怪物掉落强化奖励概率+8%',lvl:'',apply:()=>{ s.luck+=0.08; }});
   return pool;
 }
 function applyUpgrade(u,source){
   if(!u) return;
   u.apply();
   const p=p0(), g=game;
+  g.upgradeLog.push({name:u.name, source});
+  if(g.upgradeLog.length>8) g.upgradeLog.shift();
   g.damageTexts.push({x:p.x,y:p.y-p.r-24,txt:(source==='drop'?'装备 ':'升级 ')+u.name,life:70,max:70,vy:-0.45,col:'#ffd86b'});
 }
 function upgradeById(id){
@@ -678,10 +1143,10 @@ function randomDropUpgrade(){
   return {id:fallback.id,ico:fallback.ico};
 }
 function rollEnemyDropReward(e,level){
-  const tierChance={small:0.015,normal:0.035,large:0.08,elite:0.18,giant:0.34}[e.tier]||0.03;
-  const typeBonus=e.type==='brute'?0.05:e.type==='runner'?0.02:0;
-  const levelBonus=Math.min(0.08, level*0.004);
-  const chance=clamp(tierChance+typeBonus+levelBonus+game.stats.luck,0,0.65);
+  const tierChance={small:0.006,normal:0.016,large:0.045,elite:0.11,giant:0.22}[e.tier]||0.014;
+  const typeBonus=e.type==='brute'?0.025:e.type==='runner'?0.01:0;
+  const levelBonus=Math.min(0.04, level*0.0022);
+  const chance=clamp(tierChance+typeBonus+levelBonus+luckValue(),0,0.42);
   return Math.random()<chance?randomDropUpgrade():null;
 }
 function xpOrbStyle(xp){
@@ -755,23 +1220,150 @@ function drawLabel(x,y,parts,strokeColor){
   ctx.restore();
 }
 
+function drawPlayerShield(p,wn,t){
+  if(wn.lvl<=0) return;
+  const prog=wn.cd/wn.rate;
+  const pulse=0.5+Math.sin(t*0.12)*0.5;
+  const hue=185+Math.sin(t*0.035)*45+prog*55;
+  const inner=p.r+18+pulse*4;
+  const outer=inner+10+prog*10;
+  const grad=ctx.createRadialGradient(p.x,p.y,inner*0.55,p.x,p.y,outer);
+  grad.addColorStop(0,'hsla('+hue+',100%,72%,0)');
+  grad.addColorStop(0.58,'hsla('+hue+',95%,68%,0.13)');
+  grad.addColorStop(1,'hsla('+(hue+36)+',100%,70%,0.34)');
+  ctx.save();
+  ctx.fillStyle=grad;
+  ctx.beginPath(); ctx.arc(p.x,p.y,outer,0,7); ctx.fill();
+  ctx.strokeStyle='hsla('+(hue+18)+',100%,76%,'+(0.34+prog*0.28)+')';
+  ctx.lineWidth=2.5;
+  ctx.shadowColor='hsla('+hue+',100%,68%,0.76)';
+  ctx.shadowBlur=14+prog*14;
+  ctx.beginPath(); ctx.arc(p.x,p.y,inner+prog*8,0,7); ctx.stroke();
+  ctx.globalAlpha=0.32+0.34*(1-prog);
+  ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.arc(p.x,p.y,outer+prog*18,0,7); ctx.stroke();
+  ctx.restore();
+}
+
+function drawCrescentBlade(x,y,size,angle,t){
+  const hue=205+Math.sin(t*0.04+angle)*38;
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.rotate(angle+Math.PI/2);
+  ctx.shadowColor='hsla('+hue+',100%,72%,0.82)';
+  ctx.shadowBlur=12;
+  const grad=ctx.createLinearGradient(-size,-size*1.25,size,size*1.25);
+  grad.addColorStop(0,'#ffffff');
+  grad.addColorStop(0.45,'hsl('+hue+',100%,78%)');
+  grad.addColorStop(1,'hsl('+(hue+38)+',92%,56%)');
+  ctx.fillStyle=grad;
+  ctx.beginPath();
+  ctx.arc(0,0,size*1.32,-2.28,2.28);
+  ctx.arc(size*0.44,0,size*1.05,2.08,-2.08,true);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,0.75)';
+  ctx.lineWidth=1.2;
+  ctx.stroke();
+  ctx.globalAlpha=0.8;
+  ctx.fillStyle='#f8fbff';
+  ctx.beginPath();
+  ctx.arc(-size*0.64,-size*0.96,size*0.16,0,7);
+  ctx.arc(-size*0.64,size*0.96,size*0.16,0,7);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawMagicBolt(b,t){
+  const r=b.r, a=Math.atan2(b.vy,b.vx);
+  ctx.save();
+  ctx.translate(b.x,b.y);
+  ctx.rotate(a);
+  ctx.shadowColor=b.glow||b.col||'#7ad3ff';
+  ctx.shadowBlur=b.trail||14;
+  const main=b.crit?'#ffd86b':(b.col||'#7ad3ff');
+  const core=b.crit?'#fff2a8':(b.core||'#e6f6ff');
+  if(b.shape==='comet'){
+    ctx.fillStyle=main;
+    ctx.beginPath();
+    ctx.moveTo(r*1.7,0);
+    ctx.quadraticCurveTo(-r*0.2,-r*1.25,-r*1.55,-r*0.35);
+    ctx.quadraticCurveTo(-r*0.85,0,-r*1.55,r*0.35);
+    ctx.quadraticCurveTo(-r*0.2,r*1.25,r*1.7,0);
+    ctx.fill();
+    ctx.fillStyle=core;
+    ctx.beginPath(); ctx.arc(r*0.2,0,r*0.46,0,7); ctx.fill();
+  } else if(b.shape==='shard'){
+    ctx.fillStyle=main;
+    ctx.beginPath();
+    ctx.moveTo(r*1.75,0);
+    ctx.lineTo(r*0.25,-r*0.78);
+    ctx.lineTo(-r*1.45,0);
+    ctx.lineTo(r*0.25,r*0.78);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle=core; ctx.lineWidth=1.2; ctx.stroke();
+  } else if(b.shape==='bolt'){
+    ctx.strokeStyle=main;
+    ctx.lineWidth=Math.max(3,r*0.75);
+    ctx.lineJoin='round';
+    ctx.beginPath();
+    ctx.moveTo(-r*1.6,-r*0.5);
+    ctx.lineTo(-r*0.35,r*0.05);
+    ctx.lineTo(-r*0.72,r*0.92);
+    ctx.lineTo(r*1.45,-r*0.18);
+    ctx.stroke();
+    ctx.strokeStyle=core; ctx.lineWidth=Math.max(1.3,r*0.28); ctx.stroke();
+  } else if(b.shape==='diamond'){
+    ctx.fillStyle=main;
+    ctx.beginPath();
+    ctx.moveTo(r*1.45,0);
+    ctx.lineTo(0,-r*1.1);
+    ctx.lineTo(-r*1.45,0);
+    ctx.lineTo(0,r*1.1);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha=0.78;
+    ctx.fillStyle=core;
+    ctx.beginPath(); ctx.arc(0,0,r*0.42,0,7); ctx.fill();
+  } else if(b.shape==='needle'){
+    ctx.fillStyle=main;
+    ctx.beginPath();
+    ctx.moveTo(r*1.95,0);
+    ctx.lineTo(-r*1.55,-r*0.42);
+    ctx.lineTo(-r*1.05,0);
+    ctx.lineTo(-r*1.55,r*0.42);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle=core; ctx.lineWidth=1; ctx.stroke();
+  } else if(b.shape==='crescent'){
+    ctx.rotate(Math.sin(t*0.2)*0.1);
+    ctx.fillStyle=main;
+    ctx.beginPath();
+    ctx.arc(0,0,r*1.42,-2.25,2.25);
+    ctx.arc(r*0.46,0,r*1.08,2.08,-2.08,true);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle=core; ctx.lineWidth=1.1; ctx.stroke();
+  } else {
+    ctx.globalAlpha=0.34; ctx.fillStyle=main;
+    ctx.beginPath();ctx.arc(0,0,r+5,0,7);ctx.fill();
+    ctx.globalAlpha=1; ctx.fillStyle=core;
+    ctx.beginPath();ctx.arc(0,0,r,0,7);ctx.fill();
+  }
+  ctx.restore();
+}
+
 // ---------- render ----------
 function draw(){
   const g=game; if(!g)return;
   ctx.clearRect(0,0,W,H);
   const ox=W/2-g.cam.x, oy=H/2-g.cam.y;
 
-  // grid floor
+  // 地面只做视觉装饰，不参与碰撞，避免改变现有玩法手感。
   ctx.save();
   ctx.translate(ox,oy);
-  const grid=64;
-  const startX=Math.floor((g.cam.x-W/2)/grid)*grid;
-  const startY=Math.floor((g.cam.y-H/2)/grid)*grid;
-  ctx.strokeStyle='#1a1a2a'; ctx.lineWidth=1;
-  ctx.beginPath();
-  for(let x=startX;x<g.cam.x+W/2+grid;x+=grid){ctx.moveTo(x,g.cam.y-H/2);ctx.lineTo(x,g.cam.y+H/2);}
-  for(let y=startY;y<g.cam.y+H/2+grid;y+=grid){ctx.moveTo(g.cam.x-W/2,y);ctx.lineTo(g.cam.x+W/2,y);}
-  ctx.stroke();
+  drawDungeonFloor(g);
 
   // orbs
   for(const o of g.orbs){
@@ -815,6 +1407,15 @@ function draw(){
       ctx.beginPath(); ctx.arc(e.x,e.y,e.r+7,0,7); ctx.fill();
       ctx.restore();
     }
+    if(e.dashGlow>0){
+      ctx.save();
+      ctx.strokeStyle='rgba(255,216,107,'+(e.dashGlow/22*0.78)+')';
+      ctx.shadowColor='rgba(255,216,107,0.85)';
+      ctx.shadowBlur=16;
+      ctx.lineWidth=2.5;
+      ctx.beginPath(); ctx.arc(e.x,e.y,e.r+10+e.dashGlow*0.22,0,7); ctx.stroke();
+      ctx.restore();
+    }
     const gimg = e.skin==='runner'?runnerImg:grubImg;
     const gready = e.skin==='runner'?runnerReady:grubReady;
     if((e.type==='grub'||e.type==='runner') && gready){
@@ -845,10 +1446,29 @@ function draw(){
       ctx.beginPath(); ctx.arc(e.x,e.y,e.r+4,0,7); ctx.stroke();
       ctx.restore();
     }
-    drawLabel(e.x,labelY,[
+    if(e.skills&&e.skills.length){
+      for(const s of e.skills){
+        if(s.id!=='blade') continue;
+        ctx.save();
+        ctx.strokeStyle=e.ring||'rgba(255,138,150,0.78)';
+        ctx.globalAlpha=0.42;
+        ctx.lineWidth=1.4;
+        ctx.beginPath(); ctx.arc(e.x,e.y,s.radius,0,7); ctx.stroke();
+        ctx.globalAlpha=1;
+        for(let i=0;i<s.count;i++){
+          const a=s.ang+i/s.count*Math.PI*2;
+          drawCrescentBlade(e.x+Math.cos(a)*s.radius,e.y+Math.sin(a)*s.radius,s.size,a,g.t);
+        }
+        ctx.restore();
+      }
+    }
+    const skillTxt=enemySkillLabel(e);
+    const labelParts=[
       {txt:'Lv '+e.lvl,col:'#f3f6ff'},
       {txt:(e.mark||'●')+' '+(e.rarity||'普通'),col:e.rarityColor||'#d8d8e8'},
-    ],e.ring||'rgba(216,216,232,0.5)');
+    ];
+    if(skillTxt) labelParts.push({txt:skillTxt,col:'#ffd86b'});
+    drawLabel(e.x,labelY,labelParts,e.ring||'rgba(216,216,232,0.5)');
     // hp bar
     if(e.hp<e.maxhp){
       const bw=e.r*2.2;
@@ -867,11 +1487,23 @@ function draw(){
     ctx.lineWidth=Math.max(2,b.r*0.55);
     ctx.globalAlpha=0.42;
     ctx.beginPath(); ctx.moveTo(b.px||b.x,b.py||b.y); ctx.lineTo(b.x,b.y); ctx.stroke();
-    ctx.shadowColor=b.glow||'#7ad3ff'; ctx.shadowBlur=b.trail||16;
-    ctx.globalAlpha=0.34; ctx.fillStyle=b.crit?'#ffd86b':(b.col||'#7ad3ff');
-    ctx.beginPath();ctx.arc(b.x,b.y,b.r+5,0,7);ctx.fill();
-    ctx.globalAlpha=1; ctx.fillStyle=b.crit?'#fff2a8':(b.core||'#e6f6ff');
-    ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,7);ctx.fill();
+    ctx.globalAlpha=1;
+    drawMagicBolt(b,g.t);
+    ctx.restore();
+  }
+  ctx.shadowBlur=0; ctx.globalAlpha=1;
+
+  // hostile projectiles
+  for(const b of g.enemyShots){
+    if(b.hidden || !inViewport(b.x,b.y,b.r,BULLET_HIDE_MARGIN)) continue;
+    ctx.save();
+    ctx.lineCap='round';
+    ctx.strokeStyle=b.glow||'rgba(255,138,150,0.6)';
+    ctx.lineWidth=Math.max(2,b.r*0.45);
+    ctx.globalAlpha=0.36;
+    ctx.beginPath(); ctx.moveTo(b.px||b.x,b.py||b.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+    ctx.globalAlpha=1;
+    drawMagicBolt({x:b.x,y:b.y,vx:b.vx,vy:b.vy,r:b.r,col:b.col,core:'#fff2e8',glow:b.glow,shape:'orb',trail:14},g.t);
     ctx.restore();
   }
   ctx.shadowBlur=0; ctx.globalAlpha=1;
@@ -882,8 +1514,7 @@ function draw(){
     for(let i=0;i<wo.count;i++){
       const a=wo.ang+i/wo.count*Math.PI*2;
       const bx=p.x+Math.cos(a)*wo.radius, by=p.y+Math.sin(a)*wo.radius;
-      ctx.fillStyle='#dfe6ff'; ctx.shadowColor='#aab8ff'; ctx.shadowBlur=8;
-      ctx.beginPath();ctx.arc(bx,by,wo.size,0,7);ctx.fill();
+      drawCrescentBlade(bx,by,wo.size,a,g.t);
     }
     ctx.shadowBlur=0;
   }
@@ -912,8 +1543,12 @@ function draw(){
   const wn=g.weapons.nova;
   if(wn.lvl>0){
     const prog=wn.cd/wn.rate;
-    ctx.strokeStyle='rgba(122,211,255,'+(0.1+0.2*prog)+')'; ctx.lineWidth=2;
+    const hue=185+Math.sin(g.t*0.035)*45+prog*55;
+    ctx.strokeStyle='hsla('+hue+',100%,70%,'+(0.12+0.28*prog)+')'; ctx.lineWidth=2+prog*2;
+    ctx.shadowColor='hsla('+hue+',100%,66%,0.58)';
+    ctx.shadowBlur=10+prog*16;
     ctx.beginPath();ctx.arc(p.x,p.y,wn.radius,0,7);ctx.stroke();
+    ctx.shadowBlur=0;
   }
 
   // player
@@ -921,6 +1556,7 @@ function draw(){
   if(p.ifr>0 && Math.floor(p.ifr/4)%2===0) ctx.globalAlpha=0.45;
   ctx.fillStyle='rgba(0,0,0,0.28)';
   ctx.beginPath(); ctx.ellipse(p.x,p.y+p.r*1.9,p.r*1.95,p.r*0.52,0,0,7); ctx.fill();
+  drawPlayerShield(p,wn,g.t);
   if(heroReady){
     const disp=104;                      // on-screen sprite size (200%)
     const bob=p.moving?Math.sin(p.anim*Math.PI)*1.5:0;
@@ -944,8 +1580,19 @@ function draw(){
   // particles
   for(const pt of g.particles){
     if(!inViewport(pt.x,pt.y,pt.r,40)) continue;
-    ctx.globalAlpha=pt.life/pt.max; ctx.fillStyle=pt.col;
-    ctx.beginPath();ctx.arc(pt.x,pt.y,pt.r,0,7);ctx.fill();
+    ctx.globalAlpha=pt.life/pt.max;
+    if(pt.ring){
+      ctx.strokeStyle=pt.col;
+      ctx.lineWidth=2.2;
+      ctx.shadowColor=pt.col;
+      ctx.shadowBlur=12;
+      const rr=pt.r*(1.15-pt.life/pt.max*0.35);
+      ctx.beginPath();ctx.arc(pt.x,pt.y,rr,0,7);ctx.stroke();
+      ctx.shadowBlur=0;
+    } else {
+      ctx.fillStyle=pt.col;
+      ctx.beginPath();ctx.arc(pt.x,pt.y,pt.r,0,7);ctx.fill();
+    }
   }
   ctx.globalAlpha=1;
 
@@ -970,14 +1617,53 @@ function draw(){
 }
 
 // ---------- HUD ----------
+function pct(v){ return Math.round(v*100)+'%'; }
+function hudChip(text){
+  return '<span class="hudChip">'+text+'</span>';
+}
+function chipRow(items){
+  if(items.length===0) return '<span class="hudLine">暂无</span>';
+  let html='<span class="hudChips">';
+  for(const item of items) html+=hudChip(item);
+  html+='</span>';
+  return html;
+}
+function killLevelItems(byLevel){
+  const entries=Object.entries(byLevel).sort((a,b)=>Number(a[0])-Number(b[0]));
+  return entries.slice(-8).reverse().map(([lvl,count])=>'Lv'+lvl+'×'+count);
+}
+function killRarityItems(byRarity){
+  const order=['微型','普通','稀有','精英','首领'];
+  const parts=[];
+  for(const rarity of order){
+    const count=byRarity[rarity]||0;
+    if(count>0) parts.push(rarity+'×'+count);
+  }
+  return parts;
+}
+function upgradeItems(log){
+  return log.slice(-10).reverse().map(item=>(item.source==='drop'?'装备 ':'升级 ')+item.name);
+}
 function updateHUD(){
   const g=game,p=g.player;
   document.getElementById('xpFill').style.width=(p.xp/p.next*100)+'%';
   document.getElementById('hpFill').style.width=(p.hp/p.maxhp*100)+'%';
+  document.getElementById('hpText').textContent=Math.ceil(p.hp)+'/'+p.maxhp;
   document.getElementById('lvlTag').textContent='Lv '+p.lvl;
   document.getElementById('killTag').textContent='击杀 '+p.kills;
   const sec=Math.floor(g.t/60);
   document.getElementById('timeTag').textContent=String(Math.floor(sec/60)).padStart(2,'0')+':'+String(sec%60).padStart(2,'0');
+  document.getElementById('hudStats').innerHTML=
+    '<span class="hudTitle">属性</span>'+
+    '<span class="hudLine">移动速度 <b>'+p.speed.toFixed(1)+'</b> · 伤害倍率 <b>'+pct(g.stats.dmgMul)+'</b> · 暴击率 <b>'+pct(g.stats.crit)+'</b></span>'+
+    '<span class="hudLine">护甲 <b>'+g.stats.armor+'</b> · 生命恢复 <b>'+g.stats.regen.toFixed(1)+'</b>/秒 · 拾取范围 <b>'+Math.round(g.stats.pickup)+'</b></span>'+
+    '<span class="hudLine">经验倍率 <b>'+pct(g.stats.xpMul)+'</b> · 幸运 <b>'+pct(g.stats.luck)+'</b></span>';
+  document.getElementById('hudUpgrades').innerHTML=
+    '<span class="hudTitle">奖励</span>'+chipRow(upgradeItems(g.upgradeLog));
+  document.getElementById('hudKills').innerHTML=
+    '<span class="hudTitle">击杀统计</span>'+
+    '<span class="hudLine">等级</span>'+chipRow(killLevelItems(g.killStats.byLevel))+
+    '<span class="hudLine">稀有度</span>'+chipRow(killRarityItems(g.killStats.byRarity));
 }
 
 // ---------- loop ----------
