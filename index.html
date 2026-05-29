@@ -86,8 +86,10 @@
   .hudChip {
     display:inline-flex !important; align-items:center;
     padding:1px 5px; border-radius:5px; background:rgba(255,255,255,.06);
-    color:#d6d6ec !important; white-space:nowrap;
+    color:#d6d6ec !important; white-space:nowrap; max-width:100%;
+    overflow:hidden; text-overflow:ellipsis;
   }
+  #hudUpgrades .hudChips { flex-wrap:wrap; align-content:flex-start; }
   .hudChip.debuff {
     background:rgba(180,119,255,.18);
     border:1px solid rgba(255,138,150,.28);
